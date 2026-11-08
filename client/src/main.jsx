@@ -767,7 +767,7 @@ function App() {
   return <div className="appShell">
     <aside className={menuOpen ? "sidebar open" : "sidebar"}>
       <div className="brand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>GMAO · Maintenance</small></span></div>
-      <nav>{modules.filter(([id]) => allowed(id)).map(([id, label, Icon]) => <button key={id} className={module === id ? "active" : ""} onClick={() => { setModule(id); setMenuOpen(false); }}><Icon /><span>{label}</span></button>)}</nav>
+      <nav>{modules.filter(([id]) => allowed(id)).map(([id, label, Icon]) => <button key={id} className={`moduleNav module-${id} ${module === id ? "active" : ""}`} onClick={() => { setModule(id); setMenuOpen(false); }}><span className="moduleNavIcon"><Icon /></span><span>{label}</span></button>)}</nav>
       <div className="userBlock"><div className="avatar">{user.nom?.[0]}{user.prenom?.[0]}</div><div><strong>{user.nom} {user.prenom || ""}</strong><small>{user.role}</small></div><button title="Déconnexion" onClick={logout}><LogOut /></button></div>
     </aside>
     {menuOpen && <button className="backdrop" aria-label="Fermer" onClick={() => setMenuOpen(false)} />}
