@@ -1,0 +1,30 @@
+{
+  "name": "engineering-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "nodemon server/server.js",
+    "dev:client": "vite --config client/vite.config.js",
+    "build": "vite build --config client/vite.config.js",
+    "start": "node server/server.js",
+    "tunnel": "..\\cloudflared.exe tunnel --url http://localhost:5173"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "express": "^4.21.2",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "localtunnel": "^2.0.2",
+    "nodemon": "^3.1.9",
+    "vite": "^6.0.5",
+    "vite-plugin-pwa": "^0.21.2"
+  }
+}
