@@ -174,3 +174,12 @@ input:focus, select:focus { border-color:#57c7ff; box-shadow:0 0 0 3px rgba(87,1
 .sidebar nav button.module-stats{--module-color:#75aaff;--module-bg:rgba(78,133,226,.14);--module-bg-active:rgba(78,133,226,.27);--module-border:rgba(113,165,255,.23)}
 .sidebar nav button.module-parametres{--module-color:#b4c0d0;--module-bg:rgba(151,169,190,.13);--module-bg-active:rgba(151,169,190,.24);--module-border:rgba(179,194,211,.2)}
 @media(max-width:760px){.sidebar nav button.moduleNav{height:46px}}
+
+/* Global French / English language switch */
+.languageSwitch{display:inline-flex;align-items:center;gap:3px;padding:4px;background:rgba(12,35,62,.08);border:1px solid rgba(91,132,174,.2);border-radius:12px;box-shadow:0 5px 18px rgba(10,35,65,.08);z-index:80}
+.languageSwitch button{border:0;border-radius:8px;padding:7px 10px;background:transparent;color:var(--text,#334155);font-size:11px;font-weight:800;letter-spacing:.02em;cursor:pointer;transition:background .18s,color .18s,transform .18s}
+.languageSwitch button:hover{transform:translateY(-1px)}
+.languageSwitch button.selected{background:#1268b3;color:#fff;box-shadow:0 3px 8px rgba(18,104,179,.22)}
+.appLanguage{position:fixed;top:16px;right:20px}
+.loginLanguage{position:absolute;top:18px;right:18px}
+@media(max-width:760px){.appLanguage{top:12px;right:12px}.appLanguage button{padding:6px 8px}.main{padding-top:54px}.loginLanguage{top:12px;right:12px}}
