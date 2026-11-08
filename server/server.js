@@ -143,6 +143,14 @@ CREATE TABLE IF NOT EXISTS techniciens (
     date_modification TEXT
 );
 
+CREATE TABLE IF NOT EXISTS technicien_unites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_technicien INTEGER NOT NULL,
+    unite TEXT NOT NULL,
+    date_creation TEXT,
+    UNIQUE(id_technicien, unite)
+);
+
 -- 3) Pannes
 CREATE TABLE IF NOT EXISTS pannes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -365,7 +373,7 @@ function initSchema() {
   try {
     db.exec(SCHEMA_SQL);
     for (const [column, definition] of [
-      ["username", "TEXT UNIQUE"],
+      ["username", "TEXT"],
       ["password_hash", "TEXT"],
       ["is_admin", "INTEGER DEFAULT 0"],
       ["toutes_unites", "INTEGER DEFAULT 0"],
@@ -584,6 +592,45 @@ function machineFieldsFromBody(body, includeCreation = false) {
   return payload;
 }
 
+
+async function allowedUnitsForUser(user) {
+  if (user.role === "admin" || user.toutes_unites) {
+    const machines = await supabaseRequest("machines", { query: "?select=unite&actif=eq.1" });
+    return [...new Set(machines.map(row => row.unite).filter(Boolean))];
+  }
+  const id = user.supabase_id || user.id;
+  const links = await supabaseRequest("effectif_unites", {
+    query: `?select=unite&effectif_id=eq.${encodeURIComponent(id)}&order=unite.asc`
+  });
+  return links.map(row => row.unite).filter(Boolean);
+}
+
+async function remoteModuleRows(module, user) {
+  const units = await allowedUnitsForUser(user);
+  let rows = [];
+  if (module === "liste" || module === "saisie") {
+    rows = await supabaseRequest("pannes", { query: "?select=*&order=id.desc&limit=1000" });
+    return rows.filter(row => units.includes(row.unite));
+  }
+  if (module === "pm") {
+    rows = await supabaseRequest("pm_programmees", { query: "?select=*&order=date_prevue.desc&limit=1000" });
+    return rows.filter(row => units.includes(row.unite));
+  }
+  if (module === "operating") {
+    const [entries, machines] = await Promise.all([
+      supabaseRequest("operating_time", { query: "?select=*&order=date_jour.desc&limit=2000" }),
+      supabaseRequest("machines", { query: "?select=tag,unite" })
+    ]);
+    const unitByTag = new Map(machines.map(machine => [machine.tag, machine.unite]));
+    return entries.filter(row => units.includes(unitByTag.get(row.machine)));
+  }
+  if (module === "sop") {
+    rows = await supabaseRequest("sop", { query: "?select=*&order=code.asc&limit=1000" });
+    return rows.filter(row => !row.unite || units.includes(row.unite));
+  }
+  throw new Error("Module non pris en charge");
+}
+
 function currentUser(req) {
   const token = req.headers.authorization?.replace(/^Bearer /i, "");
   return readSessionToken(token);
@@ -738,83 +785,52 @@ app.get("/api/pm/context", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/operating/context", requireAuth, (req, res) => {
-  const units = req.user.role === "admin" || req.user.toutes_unites
-    ? dbAll("SELECT valeur FROM ref_listes WHERE type_liste=? AND actif=1 ORDER BY ordre, valeur", ["unite"]).map(row => row.valeur)
-    : dbAll("SELECT unite FROM technicien_unites WHERE id_technicien=? ORDER BY unite", [req.user.id]).map(row => row.unite);
-  const machines = dbAll(
-    `SELECT m.tag, m.designation, m.unite
-     FROM machines m
-     INNER JOIN machines_critiques mc ON mc.machine=m.tag AND mc.actif=1
-     WHERE m.actif=1
-     ORDER BY m.unite COLLATE NOCASE, m.tag COLLATE NOCASE`
-  ).filter(row => req.user.role === "admin" || req.user.toutes_unites || units.includes(row.unite));
-  res.json({ units, machines, operator: [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim() });
+app.get("/api/operating/context", requireAuth, async (req, res) => {
+  try {
+    const units = await allowedUnitsForUser(req.user);
+    const [allMachines, entries] = await Promise.all([
+      supabaseRequest("machines", { query: "?select=tag,designation,unite&actif=eq.1&order=unite.asc,tag.asc" }),
+      supabaseRequest("operating_time", { query: "?select=machine" })
+    ]);
+    const tracked = new Set(entries.map(row => row.machine));
+    const machines = allMachines.filter(row => units.includes(row.unite) && (tracked.has(row.tag) || req.user.role === "admin" || req.user.role === "superviseur"));
+    res.json({ units, machines, operator: [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim() });
+  } catch (error) { res.status(502).json({ error: `Chargement Operating Time impossible: ${error.message}` }); }
 });
 
 app.post("/api/operating", requireAuth, async (req, res) => {
-  const unite = String(req.body.unite || "");
-  const machine = String(req.body.machine || "");
-  const dateJour = String(req.body.date_jour || "");
-  if (!unite || !machine || !dateJour) return res.status(400).json({ error: "Unité, machine et date sont obligatoires" });
-  const allowedUnits = req.user.role === "admin" || req.user.toutes_unites
-    ? dbAll("SELECT valeur FROM ref_listes WHERE type_liste=? AND actif=1", ["unite"]).map(row => row.valeur)
-    : dbAll("SELECT unite FROM technicien_unites WHERE id_technicien=?", [req.user.id]).map(row => row.unite);
-  if (!allowedUnits.includes(unite)) return res.status(403).json({ error: "Unité non autorisée" });
-  const machineRow = dbGet(
-    `SELECT m.tag FROM machines m
-     INNER JOIN machines_critiques mc ON mc.machine=m.tag AND mc.actif=1
-     WHERE m.tag=? AND m.unite=? AND m.actif=1`,
-    [machine, unite]
-  );
-  if (!machineRow) return res.status(400).json({ error: "Machine critique et unité incohérentes" });
-  const hours = Number(req.body.heures_marche);
-  if (!Number.isFinite(hours) || hours < 0 || hours > 24) {
-    return res.status(400).json({ error: "Heures de marche invalides" });
-  }
-  const downtime = dbAll(
-    "SELECT COALESCE(downtime, 0) AS downtime FROM pannes WHERE machine=? AND date_panne=?",
-    [machine, dateJour]
-  ).reduce((sum, row) => sum + Number(row.downtime || 0), 0);
-  if (hours * 60 + downtime > 1440) return res.status(400).json({ error: "Le temps de marche et les arrêts dépassent 24 heures" });
-  const now = localTimestamp();
-  const existing = dbGet("SELECT id, uuid FROM operating_time WHERE machine=? AND date_jour=?", [machine, dateJour]);
-  if (existing) {
-    dbRun(
-      `UPDATE operating_time SET heures_planifiees=24, heures_marche=?, heures_arret=?,
-       commentaire=?, saisi_par=?, source='manuel', date_modification=? WHERE id=?`,
-      [hours, downtime / 60, req.body.commentaire || "", req.body.saisi_par || "", now, existing.id]
-    );
-  } else {
-    dbRun(
-      `INSERT INTO operating_time
-       (uuid, machine, date_jour, heures_planifiees, heures_marche, heures_arret,
-        commentaire, saisi_par, source, date_creation)
-       VALUES (?, ?, ?, 24, ?, ?, ?, ?, 'manuel', ?)`,
-      [crypto.randomUUID(), machine, dateJour, hours, downtime / 60,
-       req.body.commentaire || "", req.body.saisi_par || "", now]
-    );
-  }
-  persistDatabase();
-  const saved = dbGet("SELECT * FROM operating_time WHERE machine=? AND date_jour=?", [machine, dateJour]);
   try {
-    await supabaseRequest("operating_time", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      query: "?on_conflict=uuid",
-      body: [{
-        uuid: saved.uuid, machine: saved.machine, date_jour: saved.date_jour,
-        heures_planifiees: saved.heures_planifiees, heures_marche: saved.heures_marche,
-        heures_arret: saved.heures_arret, commentaire: saved.commentaire,
-        saisi_par: saved.saisi_par, source: saved.source,
-        date_creation: saved.date_creation, date_modification: saved.date_modification
-      }]
-    });
-  } catch (error) {
-    return res.status(502).json({ error: `Operating Time enregistré localement mais non synchronisé: ${error.message}` });
-  }
-  res.status(201).json(saved);
+    const unit = String(req.body.unite || ""), machine = String(req.body.machine || ""), date = String(req.body.date_jour || "");
+    if (!unit || !machine || !date) return res.status(400).json({ error: "Unité, machine et date sont obligatoires" });
+    const allowed = await allowedUnitsForUser(req.user);
+    if (!allowed.includes(unit)) return res.status(403).json({ error: "Unité non autorisée" });
+    const machineRows = await supabaseRequest("machines", { query: `?select=tag,unite,actif&tag=eq.${encodeURIComponent(machine)}&limit=1` });
+    if (!machineRows[0] || machineRows[0].unite !== unit || Number(machineRows[0].actif) !== 1) return res.status(400).json({ error: "Machine et unité incohérentes" });
+    const hours = Number(req.body.heures_marche);
+    if (!Number.isFinite(hours) || hours < 0 || hours > 24) return res.status(400).json({ error: "Heures de marche invalides" });
+    const failures = await supabaseRequest("pannes", { query: `?select=downtime&machine=eq.${encodeURIComponent(machine)}&date_panne=eq.${encodeURIComponent(date)}` });
+    const downtimeMinutes = failures.reduce((sum,row)=>sum+Number(row.downtime||0),0);
+    if (hours*60+downtimeMinutes>1440) return res.status(400).json({ error: "Le temps de marche et les arrêts dépassent 24 heures" });
+    const existing = await supabaseRequest("operating_time", { query: `?select=id,uuid&machine=eq.${encodeURIComponent(machine)}&date_jour=eq.${encodeURIComponent(date)}&limit=1` });
+    const payload = {
+      machine, date_jour: date, heures_planifiees: 24, heures_marche: hours, heures_arret: downtimeMinutes/60,
+      commentaire: req.body.commentaire || "", saisi_par: req.body.saisi_par || [req.user.nom,req.user.prenom].filter(Boolean).join(" "),
+      source: "web", date_modification: localTimestamp()
+    };
+    let saved;
+    if (existing.length) {
+      const rows = await supabaseRequest("operating_time", { method: "PATCH", query: `?id=eq.${encodeURIComponent(existing[0].id)}&select=*`, prefer: "return=representation", body: payload });
+      saved = rows?.[0] || { ...payload, id: existing[0].id, uuid: existing[0].uuid };
+    } else {
+      payload.uuid = crypto.randomUUID(); payload.date_creation = localTimestamp();
+      const rows = await supabaseRequest("operating_time", { method: "POST", query: "?select=*", prefer: "return=representation", body: [payload] });
+      saved = rows?.[0] || payload;
+    }
+    return res.status(201).json(saved);
+  } catch (error) { return res.status(502).json({ error: `Enregistrement Operating Time impossible: ${error.message}` }); }
 });
+
+
 
 app.get("/api/pieces/context", requireAuth, (req, res) => {
   const machine = String(req.query.machine || "");
@@ -864,281 +880,126 @@ app.post("/api/pieces", requireAuth, (req, res) => {
 
 app.get("/api/dashboard", requireAuth, requireModule("accueil"), async (req, res) => {
   try {
-    const allowedUnits = req.user.role === "admin" || req.user.toutes_unites
-      ? dbAll("SELECT valeur FROM ref_listes WHERE type_liste=? AND actif=1", ["unite"]).map(row => row.valeur)
-      : dbAll("SELECT unite FROM technicien_unites WHERE id_technicien=?", [req.user.id]).map(row => row.unite);
-    const unitsFilter = allowedUnits.map(() => "?").join(",");
-    const unitParams = allowedUnits.length ? allowedUnits : [""];
+    const units = await allowedUnitsForUser(req.user);
+    const [machines, employees, pannes, pm] = await Promise.all([
+      supabaseRequest("machines", { query: "?select=tag,unite,actif" }),
+      supabaseRequest("effectif", { query: "?select=id,actif" }),
+      supabaseRequest("pannes", { query: "?select=unite,statut,date_panne&limit=5000" }),
+      supabaseRequest("pm_programmees", { query: "?select=unite,statut,date_prevue&limit=3000" })
+    ]);
     const month = localTimestamp().slice(0, 7);
-    const machines = dbGet(
-      allowedUnits.length
-        ? `SELECT COUNT(*) AS count FROM machines WHERE actif=1 AND unite IN (${unitsFilter})`
-        : "SELECT COUNT(*) AS count FROM machines WHERE 0",
-      unitParams
-    );
-    const techniciens = req.user.role === "admin" || req.user.toutes_unites
-      ? dbGet("SELECT COUNT(*) AS count FROM techniciens WHERE actif=1")
-      : dbGet(
-        allowedUnits.length
-          ? `SELECT COUNT(DISTINCT t.id) AS count FROM techniciens t
-             INNER JOIN technicien_unites tu ON tu.id_technicien=t.id
-             WHERE t.actif=1 AND tu.unite IN (${unitsFilter})`
-          : "SELECT COUNT(*) AS count FROM techniciens WHERE 0",
-        unitParams
-      );
-    const pannes = dbAll("SELECT unite, statut, date_panne FROM pannes");
-    const pannesScope = pannes.filter(panne => allowedUnits.includes(panne.unite));
-    const pannesOpen = pannesScope.filter(panne => panne.statut !== "Close").length;
-    const pannesClose = pannesScope.filter(panne =>
-      panne.statut === "Close" && String(panne.date_panne || "").startsWith(month)
-    ).length;
-    const pmRows = dbAll("SELECT unite, statut, date_prevue FROM pm_programmees");
-    const pmScope = pmRows.filter(pm => allowedUnits.includes(pm.unite));
-    const pmRealizedStatuses = ["Réalisée", "Non conforme"];
-    const pmRealisees = pmScope.filter(pm =>
-      pmRealizedStatuses.includes(pm.statut) && String(pm.date_prevue || "").startsWith(month)
-    ).length;
-    const pmProgrammee = pmScope.filter(pm =>
-      !pmRealizedStatuses.includes(pm.statut) &&
-      (String(pm.date_prevue || "").startsWith(month) || String(pm.date_prevue || "") < `${month}-01`)
-    ).length;
+    const visibleMachines = machines.filter(row => units.includes(row.unite) && Number(row.actif) === 1);
+    let visibleEmployees = employees;
+    if (req.user.role !== "admin" && !req.user.toutes_unites) {
+      const associations = await supabaseRequest("effectif_unites", { query: "?select=effectif_id,unite" });
+      const employeeIds = new Set(associations.filter(row => units.includes(row.unite)).map(row => row.effectif_id));
+      visibleEmployees = employees.filter(row => employeeIds.has(row.id));
+    }
+    const panneRows = pannes.filter(row => units.includes(row.unite));
+    const pmRows = pm.filter(row => units.includes(row.unite));
+    const realized = ["Réalisée", "Non conforme"];
     res.json({
-      machines: machines.count,
-      techniciens: techniciens.count,
-      pannesOuvertes: pannesOpen,
-      pannesFermees: pannesClose,
-      pmProgrammee,
-      pmRealisees,
+      machines: visibleMachines.length,
+      techniciens: visibleEmployees.filter(row => row.actif === true).length,
+      pannesOuvertes: panneRows.filter(row => row.statut !== "Close").length,
+      pannesFermees: panneRows.filter(row => row.statut === "Close" && String(row.date_panne || "").startsWith(month)).length,
+      pmProgrammee: pmRows.filter(row => !realized.includes(row.statut) && (String(row.date_prevue || "").startsWith(month) || String(row.date_prevue || "") < `${month}-01`)).length,
+      pmRealisees: pmRows.filter(row => realized.includes(row.statut) && String(row.date_prevue || "").startsWith(month)).length,
       month
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(502).json({ error: `Chargement du tableau de bord Supabase impossible: ${error.message}` });
   }
 });
+
+
 
 app.get("/api/modules/:module", requireAuth, (req, res, next) => requireModule(req.params.module)(req, res, next), async (req, res) => {
-  if (req.params.module === "machines") {
-    try {
-      return res.json(await supabaseRequest("machines", { query: "?select=*&order=tag.asc" }));
-    } catch (error) {
-      return res.status(502).json({ error: `Chargement des machines depuis Supabase impossible: ${error.message}` });
-    }
+  const module = req.params.module;
+  if (module === "machines") {
+    try { return res.json(await supabaseRequest("machines", { query: "?select=*&order=tag.asc" })); }
+    catch (error) { return res.status(502).json({ error: `Chargement machines impossible: ${error.message}` }); }
   }
-  if (req.params.module === "effectif") {
-    try {
-      return res.json(await remoteEffectifWithUnits());
-    } catch (error) {
-      return res.status(502).json({ error: `Chargement de l'effectif depuis Supabase impossible: ${error.message}` });
-    }
+  if (module === "effectif") {
+    try { return res.json(await remoteEffectifWithUnits()); }
+    catch (error) { return res.status(502).json({ error: `Chargement effectif impossible: ${error.message}` }); }
   }
-  const tables = {
-    machines: "machines",
-    effectif: "techniciens",
-    saisie: "pannes",
-    liste: "pannes",
-    pm: "pm_programmees",
-    operating: "operating_time",
-    sop: "sop",
-    parametres: "ref_listes"
-  };
-  const table = tables[req.params.module];
-  if (!table) return res.status(404).json({ error: "Module inconnu" });
   try {
-    let rows = dbAll(`SELECT * FROM ${table} ORDER BY id DESC LIMIT 500`);
-    if (req.params.module === "effectif") {
-      rows = rows.map(row => ({
-        ...row,
-        units: dbAll("SELECT unite FROM technicien_unites WHERE id_technicien=?", [row.id]).map(unit => unit.unite)
-      }));
+    if (["liste", "saisie", "pm", "operating", "sop"].includes(module)) {
+      return res.json(await remoteModuleRows(module, req.user));
     }
-    if (["liste", "pm"].includes(req.params.module)) {
-      if (req.user.role !== "admin" && !req.user.toutes_unites) {
-        const allowedUnits = dbAll(
-          "SELECT unite FROM technicien_unites WHERE id_technicien=?",
-          [req.user.id]
-        ).map(row => row.unite);
-        rows = rows.filter(row => allowedUnits.includes(row.unite));
-      }
+    if (module === "parametres") {
+      return res.json(dbAll("SELECT * FROM ref_listes ORDER BY ordre, valeur"));
     }
-    res.json(rows);
+    return res.status(404).json({ error: "Module inconnu" });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return res.status(502).json({ error: `Chargement ${module} depuis Supabase impossible: ${error.message}` });
   }
 });
 
+
+
 app.post("/api/pm", requireAuth, async (req, res) => {
-  if (!["admin", "superviseur"].includes(req.user.role)) {
-    return res.status(403).json({ error: "Seuls les administrateurs et superviseurs peuvent programmer une PM" });
-  }
-  const unit = String(req.body.unite || "");
-  const tag = String(req.body.machine_tag || "");
-  const machine = dbGet("SELECT * FROM machines WHERE tag=?", [tag]);
-  if (!machine || machine.unite !== unit) {
-    return res.status(400).json({ error: "Machine et unité incohérentes" });
-  }
-  const allowedUnits = req.user.role === "admin" || req.user.toutes_unites
-    ? dbAll("SELECT valeur FROM ref_listes WHERE type_liste=? AND actif=1", ["unite"]).map(row => row.valeur)
-    : dbAll("SELECT unite FROM technicien_unites WHERE id_technicien=?", [req.user.id]).map(row => row.unite);
-  if (!allowedUnits.includes(unit)) return res.status(403).json({ error: "Unité non autorisée" });
-  const date = String(req.body.date_prevue || "");
-  const dateMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!dateMatch || !req.body.frequence) return res.status(400).json({ error: "Date et fréquence obligatoires" });
-  const existing = dbGet(
-    "SELECT id FROM pm_programmees WHERE machine_tag=? AND date_prevue=? AND UPPER(frequence)=UPPER(?) LIMIT 1",
-    [tag, date, req.body.frequence]
-  );
-  if (existing) {
-    return res.status(409).json({ error: "Cette PM existe déjà pour cette machine, cette date et cette fréquence" });
-  }
-  const months = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
-  const now = localTimestamp();
-  const values = [
-    crypto.randomUUID(), tag, machine.designation || "", unit, req.body.groupe || machine.groupe || "",
-    req.body.frequence, Number(req.body.tolerance_jours || 7), date,
-    months[Number(dateMatch[2]) - 1] || "", Number(dateMatch[1]),
-    req.body.id_sop || null, "Planifiée",
-    String(req.user.nom || req.user.username || "").trim() + (req.user.prenom ? ` ${req.user.prenom}` : ""),
-    req.body.commentaire || "", req.body.motif_report || "", now
-  ];
-  let result;
+  if (!["admin", "superviseur"].includes(req.user.role)) return res.status(403).json({ error: "Seuls les administrateurs et superviseurs peuvent programmer une PM" });
   try {
-    result = dbRun(
-      `INSERT INTO pm_programmees
-        (uuid, machine_tag, machine_designation, unite, groupe, frequence, tolerance_jours,
-         date_prevue, mois, annee, id_sop, statut, responsable, commentaire, motif_report, date_creation)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      values
-    );
-  } catch (error) {
-    console.error("Erreur ajout PM:", error.message);
-    return res.status(400).json({ error: `Impossible d'ajouter la PM: ${error.message}` });
-  }
-  persistDatabase();
-  const programmed = dbGet("SELECT * FROM pm_programmees WHERE id=?", [result.id]);
-  const programmedPayload = {
-    uuid: programmed.uuid,
-    machine_tag: programmed.machine_tag,
-    machine_designation: programmed.machine_designation,
-    unite: programmed.unite,
-    frequence: programmed.frequence,
-    tolerance_jours: programmed.tolerance_jours,
-    date_prevue: programmed.date_prevue,
-    mois: programmed.mois,
-    annee: programmed.annee,
-    statut: programmed.statut,
-    commentaire: programmed.commentaire,
-    date_creation: programmed.date_creation,
-    date_modification: programmed.date_modification
-  };
-  try {
-    await supabaseRequest("pm_programmees", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      query: "?on_conflict=uuid",
-      body: [programmedPayload]
-    });
-  } catch (error) {
-    return res.status(502).json({ error: `PM locale créée mais non synchronisée avec Supabase: ${error.message}` });
-  }
-  res.status(201).json(programmed);
+    const unit = String(req.body.unite || "");
+    const tag = String(req.body.machine_tag || "");
+    const allowed = await allowedUnitsForUser(req.user);
+    if (!allowed.includes(unit)) return res.status(403).json({ error: "Unité non autorisée" });
+    const machines = await supabaseRequest("machines", { query: `?select=tag,designation,unite,groupe&tag=eq.${encodeURIComponent(tag)}&actif=eq.1&limit=1` });
+    const machine = machines[0];
+    if (!machine || machine.unite !== unit) return res.status(400).json({ error: "Machine et unité incohérentes" });
+    const date = String(req.body.date_prevue || "");
+    const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match || !req.body.frequence) return res.status(400).json({ error: "Date et fréquence obligatoires" });
+    const duplicate = await supabaseRequest("pm_programmees", { query: `?select=id&machine_tag=eq.${encodeURIComponent(tag)}&date_prevue=eq.${date}&limit=1` });
+    if (duplicate.length) return res.status(409).json({ error: "Cette PM existe déjà pour cette machine et cette date" });
+    const months = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+    const payload = {
+      uuid: crypto.randomUUID(), machine_tag: tag, machine_designation: machine.designation || "",
+      unite: unit, groupe: req.body.groupe || machine.groupe || "", frequence: String(req.body.frequence),
+      tolerance_jours: Number(req.body.tolerance_jours || 7), date_prevue: date,
+      mois: months[Number(match[2])-1] || "", annee: Number(match[1]),
+      statut: "Planifiée", responsable: [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim(),
+      commentaire: req.body.commentaire || "", motif_report: req.body.motif_report || "",
+      date_creation: localTimestamp(), source: "web"
+    };
+    const created = await supabaseRequest("pm_programmees", { method: "POST", query: "?select=*", prefer: "return=representation", body: [payload] });
+    return res.status(201).json(created?.[0] || payload);
+  } catch (error) { return res.status(502).json({ error: `Création PM Supabase impossible: ${error.message}` }); }
 });
 
 app.post("/api/pm/:id/realiser", requireAuth, async (req, res) => {
-  const pm = dbGet("SELECT * FROM pm_programmees WHERE id=?", [req.params.id]);
-  if (!pm) return res.status(404).json({ error: "PM introuvable" });
-  if (pm.statut !== "Planifiée") return res.status(400).json({ error: "Cette PM n'est pas planifiée" });
-  const allowedUnits = req.user.role === "admin" || req.user.toutes_unites
-    ? dbAll("SELECT valeur FROM ref_listes WHERE type_liste=? AND actif=1", ["unite"]).map(row => row.valeur)
-    : dbAll("SELECT unite FROM technicien_unites WHERE id_technicien=?", [req.user.id]).map(row => row.unite);
-  if (!allowedUnits.includes(pm.unite)) return res.status(403).json({ error: "Unité non autorisée" });
-  const dateDebut = String(req.body.date_debut || "").replace("T", " ").slice(0, 16);
-  const dateFin = String(req.body.date_fin || "").replace("T", " ").slice(0, 16);
-  if (!dateDebut || !dateFin || dateFin < dateDebut) {
-    return res.status(400).json({ error: "Les dates de début et de fin sont invalides" });
-  }
-  const technician = req.user.role === "admin"
-    ? String(req.body.technicien || "").trim()
-    : [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim();
-  if (!technician) return res.status(400).json({ error: "Technicien obligatoire" });
-  const technicianRow = dbGet(
-    "SELECT id FROM techniciens WHERE LOWER(TRIM(nom || ' ' || COALESCE(prenom, ''))) = LOWER(TRIM(?)) LIMIT 1",
-    [technician]
-  );
-  const start = new Date(dateDebut.replace(" ", "T"));
-  const end = new Date(dateFin.replace(" ", "T"));
-  const downtime = Number.isFinite(start.getTime()) && Number.isFinite(end.getTime())
-    ? Math.max(0, Math.round((end - start) / 60000)) : 0;
-  const now = localTimestamp();
-  const result = dbRun(
-    `INSERT INTO pm_realisees
-      (uuid, id_pm_prog, machine_tag, machine_designation, unite, date_prevue, date_debut, date_fin,
-       downtime, technicien, id_technicien, ponctualite, commentaire, statut, date_creation)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [crypto.randomUUID(), pm.id, pm.machine_tag, pm.machine_designation, pm.unite, pm.date_prevue,
-     dateDebut, dateFin, downtime, technician, technicianRow?.id || req.user.id,
-     "À l'heure", req.body.commentaire || "", "Réalisée", now]
-  );
-  dbRun("UPDATE pm_programmees SET statut=?, date_modification=? WHERE id=?",
-    ["Réalisée", now, pm.id]);
-  persistDatabase();
-  const payload = dbGet("SELECT * FROM pm_realisees WHERE id=?", [result.id]);
-  const programmed = dbGet("SELECT * FROM pm_programmees WHERE id=?", [pm.id]);
-  const programmedPayload = {
-    uuid: programmed.uuid,
-    machine_tag: programmed.machine_tag,
-    machine_designation: programmed.machine_designation,
-    unite: programmed.unite,
-    frequence: programmed.frequence,
-    tolerance_jours: programmed.tolerance_jours,
-    date_prevue: programmed.date_prevue,
-    mois: programmed.mois,
-    annee: programmed.annee,
-    statut: programmed.statut,
-    commentaire: programmed.commentaire,
-    date_creation: programmed.date_creation,
-    date_modification: programmed.date_modification
-  };
   try {
-    await supabaseRequest("pm_programmees", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      query: "?on_conflict=uuid",
-      body: [programmedPayload]
-    });
-    const remotePrograms = await supabaseRequest("pm_programmees", {
-      query: `?select=id&uuid=eq.${encodeURIComponent(pm.uuid)}`
-    });
-    if (!Array.isArray(remotePrograms) || !remotePrograms.length) {
-      throw new Error("PM programmée distante introuvable après synchronisation");
+    const found = await supabaseRequest("pm_programmees", { query: `?select=*&id=eq.${encodeURIComponent(req.params.id)}&limit=1` });
+    const pm = found[0];
+    if (!pm) return res.status(404).json({ error: "PM introuvable" });
+    if (pm.statut !== "Planifiée") return res.status(400).json({ error: "Cette PM n'est pas planifiée" });
+    const allowed = await allowedUnitsForUser(req.user);
+    if (!allowed.includes(pm.unite)) return res.status(403).json({ error: "Unité non autorisée" });
+    const startText = String(req.body.date_debut || "").replace("T", " ").slice(0,16);
+    const endText = String(req.body.date_fin || "").replace("T", " ").slice(0,16);
+    const start = new Date(startText.replace(" ","T")), end = new Date(endText.replace(" ","T"));
+    if (!startText || !endText || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end < start) {
+      return res.status(400).json({ error: "Les dates de début et de fin sont invalides" });
     }
-    const realizedPayload = {
-      uuid: payload.uuid,
-      id_pm_prog: remotePrograms[0].id,
-      machine_tag: payload.machine_tag,
-      machine_designation: payload.machine_designation,
-      unite: payload.unite,
-      date_prevue: payload.date_prevue,
-      date_debut: payload.date_debut,
-      date_fin: payload.date_fin,
-      downtime: payload.downtime,
-      technicien: payload.technicien,
-      ponctualite: payload.ponctualite,
-      commentaire: payload.commentaire,
-      statut: payload.statut,
-      date_creation: payload.date_creation,
-      date_modification: payload.date_modification
+    const technician = req.user.role === "admin" ? String(req.body.technicien || "").trim() : [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim();
+    if (!technician) return res.status(400).json({ error: "Technicien obligatoire" });
+    const now = localTimestamp();
+    const payload = {
+      uuid: crypto.randomUUID(), id_pm_prog: pm.id, machine_tag: pm.machine_tag,
+      machine_designation: pm.machine_designation || "", unite: pm.unite, date_prevue: pm.date_prevue,
+      date_debut: startText, date_fin: endText, downtime: Math.max(0, Math.round((end-start)/60000)),
+      technicien: technician, ponctualite: "À l'heure", commentaire: req.body.commentaire || "",
+      statut: "Réalisée", date_creation: now, source: "web"
     };
-    await supabaseRequest("pm_realisees", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      query: "?on_conflict=uuid",
-      body: [realizedPayload]
-    });
-  } catch (error) {
-    return res.status(502).json({ error: `PM réalisée locale enregistrée mais non synchronisée avec Supabase: ${error.message}` });
-  }
-  res.status(201).json(payload);
+    const realized = await supabaseRequest("pm_realisees", { method: "POST", query: "?select=*", prefer: "return=representation", body: [payload] });
+    await supabaseRequest("pm_programmees", { method: "PATCH", query: `?id=eq.${encodeURIComponent(pm.id)}`, prefer: "return=minimal", body: { statut: "Réalisée", date_modification: now } });
+    return res.status(201).json(realized?.[0] || payload);
+  } catch (error) { return res.status(502).json({ error: `Réalisation PM Supabase impossible: ${error.message}` }); }
 });
+
+
 
 app.put("/api/users/:id/password", requireAuth, requireModule("parametres"), async (req, res) => {
   const password = String(req.body.password || "");
@@ -1348,153 +1209,49 @@ app.put("/api/effectif/:id", requireAuth, requireModule("parametres"), async (re
   }
 });
 
-app.post("/api/pannes", requireAuth, (req, res, next) => {
-  const allowedUnits = req.user.role === "admin" || req.user.toutes_unites
-    ? dbAll("SELECT valeur FROM ref_listes WHERE type_liste=? AND actif=1", ["unite"]).map(row => row.valeur)
-    : dbAll("SELECT unite FROM technicien_unites WHERE id_technicien=?", [req.user.id]).map(row => row.unite);
-  if (!allowedUnits.includes(req.body.unite)) {
-    return res.status(403).json({ error: "Unité non autorisée" });
-  }
-  const machine = dbGet("SELECT unite FROM machines WHERE tag=?", [req.body.machine]);
-  if (!machine || machine.unite !== req.body.unite) {
-    return res.status(400).json({ error: "Machine et unité incohérentes" });
-  }
-  if (req.user.role !== "admin") {
-    req.body.service = req.user.service || "";
-    req.body.technicien = [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim();
-  }
-  req.tableName = "pannes";
-  next();
-});
-
 app.post("/api/pannes", requireAuth, async (req, res) => {
-  const required = ["wo", "date_panne", "heure_panne", "date_debut", "date_fin", "unite", "machine", "area", "probleme", "commentaire", "service", "technicien", "statut"];
-  const missing = required.filter(key => String(req.body[key] ?? "").trim() === "");
-  if (missing.length) return res.status(400).json({ error: `Champs obligatoires manquants : ${missing.join(", ")}` });
-  const months = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
-  const splitDateTime = value => {
-    if (!value) return { date: "", time: "" };
-    const text = String(value).trim().replace("T", " ");
-    const match = text.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2})(?::\d{2})?)?/);
-    return match ? { date: match[1], time: match[2] || "" } : { date: text.slice(0, 10), time: "" };
-  };
-  const formatDesktopDateTime = value => {
-    const { date, time } = splitDateTime(value);
-    return date && time ? `${date} ${time}` : "";
-  };
-  if (req.body.date_panne) {
-    const panneDateTime = splitDateTime(req.body.date_panne);
-    req.body.date_panne = panneDateTime.date;
-    req.body.heure_panne = req.body.heure_panne || panneDateTime.time;
-    const monthIndex = Number(panneDateTime.date.slice(5, 7)) - 1;
-    if (monthIndex >= 0 && monthIndex < months.length && !req.body.mois) {
-      req.body.mois = months[monthIndex];
-    }
-  }
-  req.body.date_debut = formatDesktopDateTime(req.body.date_debut);
-  req.body.date_fin = formatDesktopDateTime(req.body.date_fin);
-  const allowedColumns = new Set(dbAll("PRAGMA table_info(pannes)").map(column => column.name));
-  const insertFields = ["uuid", ...Object.keys(req.body).filter(key => allowedColumns.has(key) && key !== "uuid")];
-  const panneUuid = req.body.uuid || crypto.randomUUID();
-  if (!insertFields.includes("date_creation")) {
-    insertFields.push("date_creation");
-  }
-  const pieces = Array.isArray(req.body.pieces) ? req.body.pieces : [];
-  let result;
   try {
-    const localFields = insertFields.filter(key => key !== "pieces");
-    const now = localTimestamp();
-    const localValues = localFields.map(key =>
-      key === "uuid" ? panneUuid : key === "date_creation" ? now : req.body[key]
-    );
-    result = dbRun(
-      `INSERT INTO pannes (${localFields.join(",")}) VALUES (${localFields.map(() => "?").join(",")})`,
-      localValues
-    );
-    let panne = dbGet("SELECT * FROM pannes WHERE id=?", [result.id]);
-    if (!panne && result.id) panne = dbGet("SELECT * FROM pannes WHERE uuid=?", [panneUuid]);
-    if (!panne) throw new Error(`Insertion locale introuvable après enregistrement (id=${result.id || "?"}, uuid=${panneUuid})`);
-    const piecesSummary = pieces.map(piece => {
-      const reference = String(piece.reference_piece || "").trim();
-      const name = String(piece.nom_piece || "").trim();
-      const quantity = Math.max(1, Number(piece.quantite || 1));
-      return `${reference ? `${reference} — ` : ""}${name} (x${quantity})`;
-    }).filter(Boolean).join("; ");
-    if (piecesSummary) dbRun("UPDATE pannes SET pieces_consommees=? WHERE id=?", [piecesSummary, result.id]);
-    const panneWithParts = dbGet("SELECT * FROM pannes WHERE id=?", [result.id]) || panne;
-    const pannePayload = Object.fromEntries(Object.entries(panneWithParts).filter(([key]) =>
-      ["uuid", "wo", "date_panne", "heure_panne", "date_debut", "date_fin", "unite", "machine",
-       "probleme", "area", "service", "mois", "technicien", "downtime", "statut",
-       "commentaire", "pieces_consommees", "date_creation", "date_modification"].includes(key)
-    ));
-
-    try {
-      await supabaseRequest("pannes", {
-        method: "POST",
-        prefer: "resolution=merge-duplicates,return=minimal",
-        query: "?on_conflict=uuid",
-        body: [pannePayload]
-      });
-    } catch (error) {
-      if (!String(error.message || "").includes("pieces_consommees")) throw error;
-      const pannePayloadWithoutParts = { ...pannePayload };
-      delete pannePayloadWithoutParts.pieces_consommees;
-      await supabaseRequest("pannes", {
-        method: "POST",
-        prefer: "resolution=merge-duplicates,return=minimal",
-        query: "?on_conflict=uuid",
-        body: [pannePayloadWithoutParts]
-      });
+    const body = { ...req.body };
+    const required = ["wo","date_panne","unite","machine","area","probleme","commentaire","statut"];
+    const missing = required.filter(key => String(body[key] ?? "").trim() === "");
+    if (missing.length) return res.status(400).json({ error: `Champs obligatoires manquants : ${missing.join(", ")}` });
+    const allowed = await allowedUnitsForUser(req.user);
+    if (!allowed.includes(body.unite)) return res.status(403).json({ error: "Unité non autorisée" });
+    const machineRows = await supabaseRequest("machines", { query: `?select=tag,unite&tag=eq.${encodeURIComponent(body.machine)}&limit=1` });
+    if (!machineRows[0] || machineRows[0].unite !== body.unite) return res.status(400).json({ error: "Machine et unité incohérentes" });
+    const duplicate = await supabaseRequest("pannes", { query: `?select=id&wo=eq.${encodeURIComponent(String(body.wo).trim())}&limit=1` });
+    if (duplicate.length) return res.status(409).json({ error: "Ce numéro WO existe déjà" });
+    const split = value => {
+      const text = String(value || "").trim().replace("T"," ");
+      const match = text.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2})(?::\d{2})?)?/);
+      return match ? { date: match[1], time: match[2] || "" } : { date: text.slice(0,10), time: "" };
+    };
+    const panneDate = split(body.date_panne);
+    const dateStart = split(body.date_debut), dateEnd = split(body.date_fin);
+    const monthNames = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+    const startDate = dateStart.date && dateStart.time ? `${dateStart.date} ${dateStart.time}` : String(body.date_debut || "");
+    const endDate = dateEnd.date && dateEnd.time ? `${dateEnd.date} ${dateEnd.time}` : String(body.date_fin || "");
+    const payload = {
+      uuid: crypto.randomUUID(), wo: String(body.wo).trim(), date_panne: panneDate.date,
+      heure_panne: body.heure_panne || panneDate.time || null,
+      date_debut: startDate || null, date_fin: endDate || null, unite: body.unite,
+      machine: body.machine, probleme: body.probleme, area: body.area,
+      service: req.user.role === "admin" ? body.service : (req.user.service || ""),
+      mois: monthNames[Number(panneDate.date.slice(5,7))-1] || "",
+      technicien: req.user.role === "admin" ? body.technicien : [req.user.nom,req.user.prenom].filter(Boolean).join(" "),
+      downtime: Number(body.downtime || 0), statut: body.statut,
+      commentaire: body.commentaire, pieces_consommees: (Array.isArray(body.pieces)?body.pieces:[]).map(p=>`${p.reference_piece ? p.reference_piece+" — " : ""}${p.nom_piece || ""} (x${Math.max(1,Number(p.quantite||1))})`).filter(Boolean).join("; ") || null,
+      date_creation: localTimestamp(), source: "web"
+    };
+    if (!payload.heure_panne || !payload.date_debut || !payload.date_fin || !payload.service || !payload.technicien) {
+      return res.status(400).json({ error: "Date/heure, début, fin, service et technicien sont obligatoires" });
     }
-
-    for (const piece of pieces) {
-      const name = String(piece.nom_piece || piece.nom || "").trim();
-      if (!name) continue;
-      const reference = String(piece.reference_piece || piece.reference || "").trim() || null;
-      const description = String(piece.description_piece || piece.description || "").trim() || null;
-      let catalog = reference
-        ? dbGet("SELECT * FROM pieces_rechange WHERE LOWER(reference)=LOWER(?) LIMIT 1", [reference])
-        : dbGet("SELECT * FROM pieces_rechange WHERE LOWER(nom)=LOWER(?) LIMIT 1", [name]);
-      if (!catalog) {
-        const catalogUuid = crypto.randomUUID();
-        const catalogResult = dbRun(
-          "INSERT INTO pieces_rechange (uuid, reference, nom, description, actif, date_creation) VALUES (?, ?, ?, ?, 1, ?)",
-          [catalogUuid, reference, name, description, new Date().toISOString()]
-        );
-        catalog = dbGet("SELECT * FROM pieces_rechange WHERE id=?", [catalogResult.id]);
-      }
-      const linked = dbGet("SELECT id FROM pieces_machines WHERE id_piece=? AND machine=?", [catalog.id, req.body.machine]);
-      if (!linked) {
-        dbRun("INSERT INTO pieces_machines (id_piece, machine, date_creation) VALUES (?, ?, ?)",
-          [catalog.id, req.body.machine, new Date().toISOString()]);
-      }
-      const useUuid = crypto.randomUUID();
-      const usageResult = dbRun(
-        `INSERT INTO pieces_utilisees
-          (uuid, id_panne, wo, machine, unite, id_piece, nom_piece, reference_piece,
-           description_piece, quantite, date_utilisation, technicien, commentaire, date_creation)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [useUuid, result.id, req.body.wo, req.body.machine, req.body.unite, catalog.id, name,
-         catalog.reference || reference, description || catalog.description, Number(piece.quantite || 1),
-         req.body.date_panne || new Date().toISOString(), req.body.technicien,
-         piece.commentaire || "", new Date().toISOString()]
-      );
-      try {
-        await supabaseRequest("pieces_rechange", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", query: "?on_conflict=uuid", body: [Object.fromEntries(Object.entries(catalog).filter(([key]) => ["uuid", "reference", "nom", "description", "fournisseur", "actif", "date_creation", "date_modification"].includes(key)))] });
-        await supabaseRequest("pieces_machines", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", query: "?on_conflict=piece_uuid,machine", body: [{ piece_uuid: catalog.uuid, machine: req.body.machine, date_creation: new Date().toISOString() }] });
-        await supabaseRequest("pieces_utilisees", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", query: "?on_conflict=uuid", body: [{ uuid: useUuid, panne_uuid: panneUuid, wo: req.body.wo, machine: req.body.machine, unite: req.body.unite, piece_uuid: catalog.uuid, nom_piece: name, reference_piece: catalog.reference || reference, description_piece: description || catalog.description, quantite: Number(piece.quantite || 1), date_utilisation: req.body.date_panne || new Date().toISOString(), technicien: req.body.technicien, commentaire: piece.commentaire || "", date_creation: new Date().toISOString() }] });
-      } catch (error) {
-        console.error("Synchronisation pièce vers Supabase:", error.message);
-      }
-    }
-    res.status(201).json({ id: result.id, uuid: panneUuid });
-  } catch (error) {
-    if (typeof result !== "undefined") {
-      dbRun("DELETE FROM pannes WHERE id=?", [result.id]);
-    }
-    res.status(502).json({ error: `Panne non synchronisée avec Supabase: ${error.message}` });
-  }
+    const created = await supabaseRequest("pannes", { method: "POST", query: "?select=*", prefer: "return=representation", body: [payload] });
+    return res.status(201).json(created?.[0] || payload);
+  } catch (error) { return res.status(502).json({ error: `Enregistrement panne Supabase impossible: ${error.message}` }); }
 });
+
+
 
 app.all("/api/tables/:table", requireAuth, async (req, res, next) => {
   const table = req.params.table;
@@ -1511,164 +1268,94 @@ async function tableColumns(table) {
 }
 
 app.put("/api/tables/pannes/:id", requireAuth, async (req, res) => {
-  const panne = dbGet("SELECT * FROM pannes WHERE id=?", [req.params.id]);
-  if (!panne) return res.status(404).json({ error: "Panne introuvable" });
-
-  const allowedUnits = req.user.role === "admin" || req.user.toutes_unites
-    ? dbAll("SELECT valeur FROM ref_listes WHERE type_liste=? AND actif=1", ["unite"]).map(row => row.valeur)
-    : dbAll("SELECT unite FROM technicien_unites WHERE id_technicien=?", [req.user.id]).map(row => row.unite);
-  const targetUnit = String(req.body.unite ?? panne.unite);
-  if (!allowedUnits.includes(targetUnit)) {
-    return res.status(403).json({ error: "Modification non autorisée pour cette unité" });
-  }
-  if (!allowedUnits.includes(String(panne.unite))) {
-    return res.status(403).json({ error: "Modification non autorisée pour cette panne" });
-  }
-
-  const machine = dbGet("SELECT unite FROM machines WHERE tag=?", [req.body.machine ?? panne.machine]);
-  if (!machine || machine.unite !== targetUnit) {
-    return res.status(400).json({ error: "Machine et unité incohérentes" });
-  }
-
-  const allowedColumns = await tableColumns("pannes");
-  const technician = [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim();
-  const fields = Object.keys(req.body).filter(key =>
-    allowedColumns.has(key) && !["id", "uuid", "password_hash", "date_creation"].includes(key)
-  );
-  for (const key of fields) {
-    if (req.user.role !== "admin" && ["service", "technicien"].includes(key)) {
-      continue;
-    }
-  }
-  const editableFields = fields.filter(key => !(req.user.role !== "admin" && ["service", "technicien"].includes(key)));
-  const values = editableFields.map(key => req.body[key]);
-  const modificationTime = localTimestamp();
-  editableFields.push("date_modification");
-  values.push(modificationTime);
-  dbRun(
-    `UPDATE pannes SET ${editableFields.map(key => `${key}=?`).join(",")} WHERE id=?`,
-    [...values, req.params.id]
-  );
-
-  if (req.user.role !== "admin") {
-    dbRun("UPDATE pannes SET technicien=?, service=? WHERE id=?", [
-      technician, req.user.service || "", req.params.id
-    ]);
-  }
-  const updated = dbGet("SELECT * FROM pannes WHERE id=?", [req.params.id]);
-  const payload = Object.fromEntries(Object.entries(updated).filter(([key]) =>
-    ["uuid", "wo", "date_panne", "heure_panne", "date_debut", "date_fin", "unite", "machine",
-     "probleme", "area", "service", "mois", "technicien", "downtime", "statut",
-     "commentaire", "pieces_consommees", "date_creation", "date_modification"].includes(key)
-  ));
   try {
-    await supabaseRequest("pannes", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      query: "?on_conflict=uuid",
-      body: [payload]
-    });
-  } catch (error) {
-    if (!String(error.message || "").includes("pieces_consommees")) throw error;
-    delete payload.pieces_consommees;
-    await supabaseRequest("pannes", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      query: "?on_conflict=uuid",
-      body: [payload]
-    });
-  }
-  res.json(updated);
+    const found = await supabaseRequest("pannes", { query: `?select=*&id=eq.${encodeURIComponent(req.params.id)}&limit=1` });
+    const panne = found[0];
+    if (!panne) return res.status(404).json({ error: "Panne introuvable" });
+    const allowed = await allowedUnitsForUser(req.user);
+    const targetUnit = String(req.body.unite ?? panne.unite);
+    if (!allowed.includes(targetUnit) || !allowed.includes(panne.unite)) return res.status(403).json({ error: "Modification non autorisée pour cette unité" });
+    const machineTag = String(req.body.machine ?? panne.machine);
+    const machine = await supabaseRequest("machines", { query: `?select=tag,unite&tag=eq.${encodeURIComponent(machineTag)}&limit=1` });
+    if (!machine[0] || machine[0].unite !== targetUnit) return res.status(400).json({ error: "Machine et unité incohérentes" });
+    const allowedFields = ["wo","date_panne","heure_panne","date_debut","date_fin","unite","machine","probleme","area","service","mois","technicien","downtime","statut","commentaire","pieces_consommees"];
+    const payload = Object.fromEntries(Object.entries(req.body).filter(([key])=>allowedFields.includes(key)));
+    if (req.user.role !== "admin") {
+      delete payload.service; delete payload.technicien;
+    }
+    payload.date_modification = localTimestamp();
+    const updated = await supabaseRequest("pannes", { method: "PATCH", query: `?id=eq.${encodeURIComponent(req.params.id)}&select=*`, prefer: "return=representation", body: payload });
+    return res.json(updated?.[0] || { ok: true });
+  } catch (error) { return res.status(502).json({ error: `Modification panne Supabase impossible: ${error.message}` }); }
 });
 
-app.get("/api/tables/:table", async (req, res) => {
-  const rows = dbAll(`SELECT * FROM ${req.params.table} ORDER BY id DESC LIMIT 500`);
-  res.json(rows.map(row => { const result = { ...row }; delete result.password_hash; return result; }));
+
+
+app.get("/api/tables/:table", requireAuth, async (req, res) => {
+  const table = req.params.table;
+  if (!["machines","pannes","pm_programmees","pm_realisees","operating_time","sop","ref_listes"].includes(table)) return res.status(404).json({ error: "Table non disponible" });
+  try {
+    if (["pannes","pm_programmees","operating_time","sop"].includes(table)) {
+      const module = ({pannes:"liste",pm_programmees:"pm",operating_time:"operating",sop:"sop"})[table];
+      return res.json(await remoteModuleRows(module, req.user));
+    }
+    const rows = await supabaseRequest(table, { query: "?select=*&limit=1000" });
+    return res.json(rows);
+  } catch (error) { return res.status(502).json({ error: `Lecture Supabase impossible: ${error.message}` }); }
 });
+
+
 
 app.post("/api/tables/:table", requireAuth, async (req, res) => {
   const table = req.params.table;
-  if (table === "machines") {
+  if (table === "sop") {
     try {
-      const payload = machineFieldsFromBody(req.body, true);
-      if (!payload.tag || !payload.designation || !payload.unite) {
-        return res.status(400).json({ error: "Tag, désignation et unité sont obligatoires" });
-      }
-      const created = await supabaseRequest("machines", {
-        method: "POST", prefer: "return=representation", body: [payload]
-      });
-      return res.status(201).json(created?.[0] || { ok: true });
-    } catch (error) {
-      return res.status(502).json({ error: `Enregistrement machine Supabase impossible: ${error.message}` });
-    }
+      const payload = {
+        uuid: crypto.randomUUID(), code: String(req.body.code || "").trim(),
+        titre: String(req.body.titre || "").trim(), version: req.body.version || null,
+        machine: req.body.machine || null, unite: req.body.unite || null,
+        date_application: req.body.date_application || null, date_revision: req.body.date_revision || null,
+        validateur: req.body.validateur || null, chemin_fichier: req.body.chemin_fichier || null,
+        commentaire: req.body.commentaire || null, actif: Number(req.body.actif ?? 1),
+        date_creation: localTimestamp(), source: "web"
+      };
+      if (!payload.code || !payload.titre) return res.status(400).json({ error: "Code et titre obligatoires" });
+      const rows = await supabaseRequest("sop", { method: "POST", query: "?select=*", prefer: "return=representation", body: [payload] });
+      return res.status(201).json(rows?.[0] || payload);
+    } catch (error) { return res.status(502).json({ error: `Création SOP impossible: ${error.message}` }); }
   }
-  const allowedColumns = await tableColumns(table);
-  const fields = Object.keys(req.body).filter(key =>
-    allowedColumns.has(key) && !["id", "uuid", "password_hash"].includes(key));
-  const now = new Date().toISOString();
-  const values = fields.map(key => req.body[key]);
-  const uuid = crypto.randomUUID();
-  let insertFields = [...fields];
-  let insertValues = [...values];
-  if (table !== "ref_listes" && !fields.includes("uuid")) {
-    insertFields = ["uuid", ...insertFields];
-    insertValues = [uuid, ...insertValues];
-  }
-  if (!fields.includes("date_creation") && !["ref_listes"].includes(table)) {
-    insertFields.push("date_creation");
-    insertValues.push(now);
-  }
-  const sql = `INSERT INTO ${table} (${insertFields.join(",")}) VALUES (${insertFields.map(() => "?").join(",")})`;
-  const result = dbRun(sql, insertValues);
-  res.status(201).json({ id: result.id });
+  if (table === "ref_listes" && req.user.role !== "admin") return res.status(403).json({ error: "Réservé aux administrateurs" });
+  return res.status(400).json({ error: "Création non prise en charge pour cette table" });
 });
+
+
 
 app.put("/api/tables/:table/:id", requireAuth, async (req, res) => {
-  if (req.params.table === "machines") {
+  const table = req.params.table;
+  if (table === "sop") {
     try {
-      const payload = machineFieldsFromBody(req.body, false);
-      if (!Object.keys(payload).some(key => key !== "date_modification")) {
-        return res.status(400).json({ error: "Aucune donnée machine à modifier" });
-      }
-      const updated = await supabaseRequest("machines", {
-        method: "PATCH",
-        query: `?id=eq.${encodeURIComponent(req.params.id)}&select=*`,
-        prefer: "return=representation",
-        body: payload
-      });
-      if (!updated?.length) return res.status(404).json({ error: "Machine introuvable" });
-      return res.json(updated[0]);
-    } catch (error) {
-      return res.status(502).json({ error: `Modification machine Supabase impossible: ${error.message}` });
-    }
+      const allowed = ["code","titre","version","machine","unite","date_application","date_revision","validateur","chemin_fichier","commentaire","actif"];
+      const payload = Object.fromEntries(Object.entries(req.body).filter(([key])=>allowed.includes(key)));
+      payload.date_modification = localTimestamp();
+      const rows = await supabaseRequest("sop", { method: "PATCH", query: `?id=eq.${encodeURIComponent(req.params.id)}&select=*`, prefer: "return=representation", body: payload });
+      if (!rows?.length) return res.status(404).json({ error: "SOP introuvable" });
+      return res.json(rows[0]);
+    } catch (error) { return res.status(502).json({ error: `Modification SOP impossible: ${error.message}` }); }
   }
-  const allowedColumns = await tableColumns(req.params.table);
-  const fields = Object.keys(req.body).filter(key =>
-    allowedColumns.has(key) && !["id", "uuid", "password_hash", "date_creation"].includes(key));
-  fields.push("date_modification");
-  const values = fields.slice(0, -1).map(key => req.body[key]);
-  values.push(new Date().toISOString());
-  dbRun(
-    `UPDATE ${req.params.table} SET ${fields.map(key => `${key}=?`).join(",")} WHERE id=?`,
-    [...values, req.params.id]
-  );
-  res.json({ ok: true });
+  return res.status(400).json({ error: "Modification non prise en charge pour cette table" });
 });
 
+
+
 app.delete("/api/tables/:table/:id", requireAuth, async (req, res) => {
-  if (req.params.table === "machines") {
-    try {
-      await supabaseRequest("machines", {
-        method: "DELETE", query: `?id=eq.${encodeURIComponent(req.params.id)}`
-      });
-      return res.json({ ok: true });
-    } catch (error) {
-      return res.status(502).json({ error: `Suppression machine Supabase impossible: ${error.message}` });
-    }
-  }
-  dbRun(`DELETE FROM ${req.params.table} WHERE id=?`, [req.params.id]);
-  res.json({ ok: true });
+  if (req.params.table !== "sop") return res.status(400).json({ error: "Suppression non prise en charge pour cette table" });
+  try {
+    await supabaseRequest("sop", { method: "DELETE", query: `?id=eq.${encodeURIComponent(req.params.id)}` });
+    return res.json({ ok: true });
+  } catch (error) { return res.status(502).json({ error: `Suppression SOP impossible: ${error.message}` }); }
 });
+
+
 
 const clientDist = path.resolve(__dirname, "../client/dist");
 app.use(express.static(clientDist));
