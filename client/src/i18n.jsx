@@ -76,7 +76,8 @@ export function useLanguage() {
       scheduled = true;
       queueMicrotask(apply);
     });
-    observer.observe(root, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ATTRS });
+    // Observer uniquement les ajouts/suppressions React. La traduction modifie les textes et attributs ; les observer provoquait des rescans répétés de tout le DOM et pouvait figer Chrome.
+    observer.observe(root, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, [language]);
   return { language, setLanguage };
