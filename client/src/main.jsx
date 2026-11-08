@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "./registerSW";
 import {
-  Activity, BookOpen, CalendarClock, Gauge, LayoutDashboard, LogOut, Menu,
+  Activity, CalendarClock, Gauge, LayoutDashboard, LogOut, Menu,
   Settings, Siren, Users, Wrench, ClipboardPlus, ClipboardList, Search, Plus, Save, X
 } from "lucide-react";
 import "./styles.css";
@@ -16,7 +16,6 @@ const modules = [
   ["pm", "Maintenance préventive", CalendarClock],
   ["operating", "Operating Time", Gauge],
   ["stats", "Statistiques", Activity],
-  ["sop", "SOP", BookOpen],
   ["parametres", "Paramètres", Settings]
 ];
 
@@ -45,10 +44,6 @@ const fieldsByModule = {
     ["machine", "Machine"], ["date_jour", "Date", "date"], ["heures_planifiees", "Heures planifiées", "number"],
     ["heures_marche", "Heures marche", "number"], ["heures_arret", "Heures arrêt", "number"], ["commentaire", "Commentaire"]
   ],
-  sop: [
-    ["code", "Code"], ["titre", "Titre"], ["version", "Version"], ["machine", "Machine"],
-    ["unite", "Unité"], ["date_application", "Date application", "date"], ["validateur", "Validateur"]
-  ],
   parametres: [
     ["type_liste", "Type"], ["valeur", "Valeur"], ["parent", "Parent"], ["ordre", "Ordre", "number"], ["actif", "Actif", true]
   ]
@@ -56,7 +51,7 @@ const fieldsByModule = {
 
 const tables = {
   machines: "machines", effectif: "techniciens", saisie: "pannes", liste: "pannes",
-  pm: "pm_programmees", operating: "operating_time", sop: "sop", parametres: "ref_listes"
+  pm: "pm_programmees", operating: "operating_time", parametres: "ref_listes"
 };
 
 async function api(path, options = {}) {
@@ -260,6 +255,7 @@ function FailureEntry({ user }) {
   const addPiece = () => {
     if (!pieceDraft.nom_piece.trim()) return;
     setPieces(current => [...current, {
+      piece_id: pieceDraft.selected ? Number(pieceDraft.selected) : null,
       nom_piece: pieceDraft.nom_piece.trim(),
       reference_piece: pieceDraft.reference_piece.trim(),
       quantite: Math.max(1, Number(pieceDraft.quantite || 1))
@@ -269,7 +265,7 @@ function FailureEntry({ user }) {
   const createPiece = async event => {
     event.preventDefault();
     if (!newPiece.nom.trim()) return;
-    const piece = await api("/api/pieces", { method: "POST", body: JSON.stringify(newPiece) });
+    const piece = await api("/api/pieces", { method: "POST", body: JSON.stringify({ ...newPiece, machine: draft.machine }) });
     await api(`/api/pieces/context${draft.machine ? `?machine=${encodeURIComponent(draft.machine)}` : ""}`).then(setPieceContext);
     setPieceDraft({ selected: String(piece.id), nom_piece: piece.nom, reference_piece: piece.reference || "", quantite: 1 });
     setPieceFormOpen(false);
@@ -325,8 +321,8 @@ function FailureEntry({ user }) {
           <label>N° WO<input required value={draft.wo || ""} onChange={e => setDraft({ ...draft, wo: e.target.value })} /></label>
           <label>Date et heure de la panne<input type="datetime-local" required value={draft.date_panne || ""} onChange={e => setDraft({ ...draft, date_panne: e.target.value })} /></label>
           <label>Unité<select required value={draft.unite} onChange={e => setDraft({ ...draft, unite: e.target.value, machine: "" })}><option value="">Sélectionner...</option>{context.units.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>
-          <label>Machine<select required value={draft.machine} onChange={e => setDraft({ ...draft, machine: e.target.value })}><option value="">Sélectionner...</option>{machines.map(machine => <option key={machine.tag} value={machine.tag}>{machine.tag} — {machine.designation || ""}</option>)}</select></label>
-          <label>Zone<select required value={draft.area} onChange={e => setDraft({ ...draft, area: e.target.value })}><option value="">Sélectionner...</option>{context.zones.map(zone => <option key={zone} value={zone}>{zone}</option>)}</select></label>
+          <label>Machine<select required value={draft.machine} onChange={e => { const tag = e.target.value; const selectedMachine = machines.find(item => item.tag === tag); setDraft(current => ({ ...current, machine: tag, area: selectedMachine?.zone || "" })); }}><option value="">Sélectionner...</option>{machines.map(machine => <option key={machine.tag} value={machine.tag}>{machine.tag} — {machine.designation || ""}</option>)}</select></label>
+          <label>Zone<input required list="failure-zones" value={draft.area} onChange={e => setDraft({ ...draft, area: e.target.value })} placeholder="Zone de la machine ou saisir une zone" /><datalist id="failure-zones">{context.zones.map(zone => <option key={zone} value={zone} />)}</datalist></label>
         </div>
       </section>
       <section><h3>Description</h3>
@@ -356,15 +352,15 @@ function FailureEntry({ user }) {
           <label>Quantité<input type="number" min="1" value={pieceDraft.quantite} onChange={e => setPieceDraft({ ...pieceDraft, quantite: e.target.value })} /></label>
           <button className="secondary" type="button" onClick={addPiece}><Plus /> Ajouter</button>
         </div>
-        {pieceContext.machineParts.length > 0 && <p className="hint">Pièces déjà associées à cette machine : {pieceContext.machineParts.map(piece => `${piece.reference ? `${piece.reference} — ` : ""}${piece.nom}`).join(", ")}</p>}
+        {draft.machine && <div className="machineParts"><h4>Référentiel de cette machine — {draft.machine}</h4>{pieceContext.machineParts.length > 0 ? <div className="usedParts">{pieceContext.machineParts.map(piece => <div key={piece.id}><strong>{piece.nom}</strong><span>{piece.reference || "Sans référence"}</span><button type="button" className="secondary" onClick={() => setPieceDraft({ selected: String(piece.id), nom_piece: piece.nom, reference_piece: piece.reference || "", quantite: 1 })}>Utiliser</button></div>)}</div> : <p className="hint">Aucune pièce référentielle associée à cette machine pour le moment.</p>}{pieceDraft.selected && !pieceContext.machineParts.some(piece => String(piece.id) === String(pieceDraft.selected)) && <button type="button" className="secondary" onClick={async () => { try { await api(`/api/pieces/${pieceDraft.selected}/machines`, { method: "POST", body: JSON.stringify({ machine: draft.machine }) }); const refreshed = await api(`/api/pieces/context?machine=${encodeURIComponent(draft.machine)}`); setPieceContext(refreshed); } catch (err) { setError(err.message); } }}>Associer cette pièce au référentiel de la machine</button>}</div>}
         <div className="usedParts">{pieces.map((piece, index) => <div key={`${piece.reference_piece}-${index}`}><strong>{piece.nom_piece}</strong><span>{piece.reference_piece || "Sans référence"} · Qté {piece.quantite}</span><button type="button" className="dangerText" onClick={() => setPieces(current => current.filter((_, itemIndex) => itemIndex !== index))}>Retirer</button></div>)}</div>
       </section>
       <section>
         <h3>Historique des pièces utilisées</h3>
         <div className="tableWrap"><table><thead><tr><th>Date</th><th>WO</th><th>Machine</th><th>Pièce</th><th>Référence</th><th>Quantité</th></tr></thead><tbody>
-          {pieceContext.history.slice(0, 50).map(piece => <tr key={piece.id}><td>{piece.date_utilisation || "—"}</td><td>{piece.panne_wo || piece.wo || "—"}</td><td>{piece.machine}</td><td>{piece.nom_piece}</td><td>{piece.reference_piece || "—"}</td><td>{piece.quantite}</td></tr>)}
+          {pieceContext.history.slice(0, 50).map(piece => <tr key={piece.id}><td>{piece.date_utilisation || "—"}</td><td>{piece.wo || "—"}</td><td>{piece.machine}</td><td>{piece.nom}</td><td>{piece.reference || "—"}</td><td>{piece.quantite}</td></tr>)}
         </tbody></table></div>
-        {!pieceContext.history.length && <div className="empty">Aucun historique de pièce</div>}
+        {!draft.machine && <div className="empty">Sélectionnez une machine pour afficher son historique.</div>}{draft.machine && !pieceContext.history.length && <div className="empty">Aucun historique de pièce pour cette machine.</div>}
       </section>
       <div className="modalActions"><button className="primary" type="submit"><Save /> Enregistrer la panne</button></div>
     </form>
