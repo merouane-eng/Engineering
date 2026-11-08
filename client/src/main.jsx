@@ -3,7 +3,8 @@ import { createRoot } from "react-dom/client";
 import { registerSW } from "./registerSW";
 import {
   Activity, CalendarClock, Gauge, LayoutDashboard, LogOut, Menu,
-  Settings, Siren, Users, Wrench, ClipboardPlus, ClipboardList, Search, Plus, Save, X
+  Settings, Siren, Users, Wrench, ClipboardPlus, ClipboardList, Search, Plus, Save, X,
+  ArrowUpRight, CalendarDays, CheckCircle2, CircleAlert, Clock3, PlusCircle, ClipboardCheck
 } from "lucide-react";
 import "./styles.css";
 
@@ -127,37 +128,35 @@ function Login({ onLogin }) {
   </main>;
 }
 
-function Dashboard() {
-  const [data, setData] = useState(null);
-  const [cloud, setCloud] = useState(null);
-  useEffect(() => {
-    api("/api/dashboard").then(setData).catch(() => setData(null));
-    api("/api/supabase/status").then(setCloud).catch(() => setCloud({ linked: false }));
-  }, []);
-  const cards = data ? [
-    ["Machines actives", data.machines, Wrench],
-    ["Techniciens actifs", data.techniciens, Users],
-    ["Pannes ouvertes", data.pannesOuvertes, Siren],
-    ["Pannes fermées ce mois", data.pannesFermees, Activity],
-    ["PM à réaliser", data.pmProgrammee, CalendarClock],
-    ["PM réalisées ce mois", data.pmRealisees, Gauge]
-  ] : [];
-  return <div>
-    <div className="hero">
-      <div><span className="eyebrow">PILOTAGE DU SITE</span><h2>Vue d'ensemble</h2><p>Situation maintenance en temps réel.</p></div>
-      <div className={cloud?.linked ? "live" : "live offline"}>
-        <span /> {cloud?.linked ? "Supabase connecté" : "Supabase indisponible"}
-      </div>
-    </div>
-    <div className="statGrid">
-      {cards.map(([label, value, Icon]) => <article className="statCard" key={label}>
-        <div className="iconBox"><Icon /></div><div><strong>{value}</strong><span>{label}</span></div>
-      </article>)}
-    </div>
-    {!data && <div className="empty">Chargement du tableau de bord…</div>}
+function Dashboard({ user, onNavigate }) {
+  const [data,setData] = useState(null), [cloud,setCloud] = useState(null), [loading,setLoading] = useState(true), [error,setError] = useState("");
+  const load = async () => { setLoading(true); setError(""); try { const r = await Promise.all([api("/api/dashboard"),api("/api/supabase/status").catch(() => ({linked:false}))]); setData(r[0]); setCloud(r[1]); } catch(e) { setError(e.message || "Chargement impossible"); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, []);
+  const dateLabel = new Intl.DateTimeFormat("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());
+  const formatDate = value => { if(!value) return "—"; const d=new Date(value); return Number.isNaN(d.getTime())?value:new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"short"}).format(d); };
+  const cards = [["Machines en service",data?.machines,Wrench,"blue","Parc autorisé"],["Techniciens actifs",data?.techniciens,Users,"violet","Effectif disponible"],["Pannes ouvertes",data?.pannesOuvertes,CircleAlert,"orange","À traiter"],["Pannes clôturées",data?.pannesFermees,CheckCircle2,"green","Ce mois-ci"],["PM à réaliser",data?.pmProgrammee,CalendarClock,"orange","En retard ou ce mois"],["PM réalisées",data?.pmRealisees,ClipboardCheck,"green","Ce mois-ci"]];
+  return <div className="dashboard">
+    <section className="dashboardHero"><div className="dashboardHeroText"><span className="eyebrow">CENTRE DE PILOTAGE · ENGINEERING</span><h1>Bonjour {user?.prenom || user?.nom || "Utilisateur"} <span>👋</span></h1><p>Voici la situation de votre maintenance aujourd'hui.</p><div className="dashboardHeroMeta"><CalendarDays/><span>{dateLabel}</span></div></div>
+      <div className="dashboardHeroAside"><div className={cloud?.linked?"cloudState connected":"cloudState"}><span className="cloudDot"/>{cloud?.linked?"Base de données connectée":"Connexion à vérifier"}</div><div className="heroIllustration"><div className="heroRing heroRingOne"/><div className="heroRing heroRingTwo"/><div className="heroIcon"><Gauge/></div><span className="heroSpark heroSparkOne">✦</span><span className="heroSpark heroSparkTwo">＋</span></div></div>
+    </section>
+    <div className="dashboardSectionHead"><div><span className="eyebrow">VUE GÉNÉRALE</span><h2>Indicateurs clés</h2></div><button className="dashboardRefresh" onClick={load} disabled={loading}><Activity/> Actualiser</button></div>
+    {error&&<div className="dashboardError">{error}<button onClick={load}>Réessayer</button></div>}
+    <section className="dashboardKpis">{cards.map(([label,value,Icon,tone,note])=><article className="dashboardKpi" key={label}><div className="dashboardKpiTop"><span className={"dashboardKpiIcon "+tone}><Icon/></span><span className="dashboardKpiArrow"><ArrowUpRight/></span></div><strong>{loading&&!data?"—":value??0}</strong><span className="dashboardKpiLabel">{label}</span><small>{note}</small></article>)}</section>
+    <section className="dashboardLower">
+      <article className="dashboardPanel"><div className="dashboardPanelHead"><div><span className="eyebrow">SUIVI OPÉRATIONNEL</span><h3>Dernières pannes</h3></div><button onClick={()=>onNavigate("liste")}>Tout voir <ArrowUpRight/></button></div>
+      {data?.recentPannes?.length?<div className="dashboardRows">{data.recentPannes.map((row,index)=><div className="dashboardRow" key={row.id||row.wo||index}><span className={row.statut==="Close"?"rowStatus closed":"rowStatus open"}>{row.statut==="Close"?<CheckCircle2/>:<CircleAlert/>}</span><div className="dashboardRowMain"><strong>{row.machine||"Machine non précisée"}</strong><span>{row.wo?"WO "+row.wo+" · ":""}{row.probleme||"Intervention de maintenance"}</span></div><div className="dashboardRowMeta"><span>{formatDate(row.date_panne)}</span><small>{row.unite||"—"}</small></div></div>)}</div>:<div className="dashboardEmpty"><ClipboardList/><strong>Aucune panne récente à afficher</strong><span>Les nouvelles déclarations apparaîtront ici.</span></div>}</article>
+      <article className="dashboardPanel"><div className="dashboardPanelHead"><div><span className="eyebrow">ANTICIPER LES ARRÊTS</span><h3>Maintenance préventive</h3></div><button onClick={()=>onNavigate("pm")}>Planning <ArrowUpRight/></button></div>
+      {data?.upcomingPM?.length?<div className="dashboardRows">{data.upcomingPM.map((row,index)=><div className="dashboardRow" key={row.id||row.machine_tag||index}><span className="pmDate"><strong>{new Date(row.date_prevue+"T00:00:00").getDate()}</strong><small>{new Intl.DateTimeFormat("fr-FR",{month:"short"}).format(new Date(row.date_prevue+"T00:00:00"))}</small></span><div className="dashboardRowMain"><strong>{row.machine_tag||"Machine"}</strong><span>{row.frequence||"Maintenance préventive"} · {row.unite||"—"}</span></div><span className="pmBadge">{row.statut||"Planifiée"}</span></div>)}</div>:<div className="dashboardEmpty"><CalendarClock/><strong>Aucune PM à venir</strong><span>Le planning préventif est à jour.</span></div>}</article>
+    </section>
+    <section className="dashboardQuick"><div className="dashboardQuickTitle"><span className="eyebrow">ACCÈS RAPIDE</span><h3>Que souhaitez-vous faire ?</h3></div><div className="dashboardQuickGrid">
+      <button onClick={()=>onNavigate("saisie")}><span className="quickIcon orange"><PlusCircle/></span><span><strong>Déclarer une panne</strong><small>Créer un nouvel ordre de travail</small></span><ArrowUpRight/></button>
+      <button onClick={()=>onNavigate("machines")}><span className="quickIcon blue"><Wrench/></span><span><strong>Consulter les machines</strong><small>Voir le parc et ses équipements</small></span><ArrowUpRight/></button>
+      <button onClick={()=>onNavigate("pm")}><span className="quickIcon green"><CalendarClock/></span><span><strong>Planifier une PM</strong><small>Organiser la maintenance préventive</small></span><ArrowUpRight/></button>
+      <button onClick={()=>onNavigate("stats")}><span className="quickIcon violet"><Activity/></span><span><strong>Voir les statistiques</strong><small>Analyser les indicateurs maintenance</small></span><ArrowUpRight/></button>
+    </div></section>
+    <div className="dashboardFooter"><span>ENGINEERING · Gestion de maintenance industrielle</span><span><Clock3/> Données actualisées à la demande</span></div>
   </div>;
 }
-
 function Stats() {
   const [rows, setRows] = useState([]);
   useEffect(() => { api("/api/modules/liste").then(setRows).catch(() => setRows([])); }, []);
@@ -699,7 +698,7 @@ function App() {
   const logout = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch {} localStorage.removeItem("engineering_token"); localStorage.removeItem("engineering_user"); setUser(null); };
   if (!user) return <Login onLogin={login} />;
   const allowed = item => item === "parametres" ? user.role === "admin" : true;
-  const content = module === "accueil" ? <Dashboard /> : module === "stats" ? <Stats /> : module === "saisie" ? <FailureEntry user={user} /> : module === "pm" ? <PreventiveMaintenance user={user} /> : module === "operating" ? <OperatingTime user={user} /> : module === "effectif" ? <Effectif user={user} /> :
+  const content = module === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : module === "stats" ? <Stats /> : module === "saisie" ? <FailureEntry user={user} /> : module === "pm" ? <PreventiveMaintenance user={user} /> : module === "operating" ? <OperatingTime user={user} /> : module === "effectif" ? <Effectif user={user} /> :
     module === "parametres" ? <AccessSettings user={user} /> : <DataPage key={module} module={module} user={user} />;
   return <div className="appShell">
     <aside className={menuOpen ? "sidebar open" : "sidebar"}>
