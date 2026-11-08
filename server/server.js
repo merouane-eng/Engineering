@@ -396,8 +396,18 @@ async function loadSupabaseDatabase() {
   const insertRows = (table, rows, transform = row => row) => {
     if (!rows.length) return;
     const available = dbAll(`PRAGMA table_info(${table})`).map(column => column.name);
+    let skippedLegacyRows = 0;
     for (const row of rows) {
       const source = transform(row);
+
+      // The remote Supabase pm_realisees table predates the local code_pm
+      // column. Keep those authoritative records in Supabase, but do not let
+      // this schema mismatch abort the remaining local cache import.
+      if (table === "pm_realisees" && !source.code_pm) {
+        skippedLegacyRows += 1;
+        continue;
+      }
+
       const fields = Object.keys(source).filter(key =>
         available.includes(key) && source[key] !== undefined
       );
@@ -406,16 +416,19 @@ async function loadSupabaseDatabase() {
         db.run(
           `INSERT OR REPLACE INTO ${table} (${fields.join(",")}) VALUES (${fields.map(() => "?").join(",")})`,
           fields.map(key => {
-          const value = source[key];
-          if (value === null || value === undefined) return null;
-          if (typeof value === "boolean") return value ? 1 : 0;
-          if (typeof value === "object") return JSON.stringify(value);
-          return value;
+            const value = source[key];
+            if (value === null || value === undefined) return null;
+            if (typeof value === "boolean") return value ? 1 : 0;
+            if (typeof value === "object") return JSON.stringify(value);
+            return value;
           })
         );
       } catch (error) {
-        throw new Error(`${table}: ${error.message}; values=${JSON.stringify(source)}`);
+        console.error(`[DB] Ligne ${table} ignorée dans le cache local:`, error.message);
       }
+    }
+    if (skippedLegacyRows) {
+      console.warn(`[DB] ${skippedLegacyRows} PM réalisées sans code_pm conservées dans Supabase et ignorées dans le cache SQLite local.`);
     }
   };
 
