@@ -42,10 +42,14 @@ function translateDOM(root, language) {
     const value = element.getAttribute(attribute);
     if (!value) return;
     const key = normalize(value);
-    if (language === "en" && EN[key]) element.setAttribute(attribute, EN[key]);
-    if (language === "fr") {
+    if (language === "en") {
+      const translated = EN[key];
+      // Avoid generating another mutation when the attribute is already translated.
+      if (translated && value !== translated) element.setAttribute(attribute, translated);
+    } else {
       const french = Object.keys(EN).find(source => EN[source] === key);
-      if (french) element.setAttribute(attribute, french);
+      // Avoid MutationObserver feedback loops from writing an unchanged value.
+      if (french && value !== french) element.setAttribute(attribute, french);
     }
   }));
 }
