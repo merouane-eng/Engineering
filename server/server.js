@@ -413,12 +413,12 @@ async function loadSupabaseDatabase() {
 
   try {
     const employees = await supabaseRequest("effectif", { query: "?select=*&order=id.asc" });
-    const employeeUuidById = new Map(employees.map(employee => [
-      String(employee.id),
-      employee.uuid || String(employee.id)
-    ]));
-    insertRows("techniciens", employees, employee => ({
-      uuid: employee.uuid || crypto.randomUUID(),
+    const employeeUuidById = new Map();
+    insertRows("techniciens", employees, employee => {
+      const localUuid = crypto.randomUUID();
+      employeeUuidById.set(String(employee.id), localUuid);
+      return ({
+      uuid: localUuid,
       matricule: employee.matricule,
       nom: employee.nom || "",
       prenom: employee.prenom || "",
@@ -434,8 +434,10 @@ async function loadSupabaseDatabase() {
       date_recrutement: employee.date_recrutement || null,
       date_depart: employee.date_depart || null,
       date_creation: employee.created_at || employee.date_creation || localTimestamp(),
-      date_modification: employee.updated_at || employee.date_modification || null
-    }));
+      date_modification: employee.updated_at || employee.date_modification || null,
+      role: employee.role || "technicien"
+    });
+    });
 
     const employeeUnits = await supabaseRequest("effectif_unites", { query: "?select=*&order=effectif_id.asc" });
     for (const unit of employeeUnits) {
@@ -524,9 +526,61 @@ const dbRun = (sql, params = []) => {
 };
 
 function roleFor(user) {
+  if (user.role && ["admin", "superviseur", "technicien"].includes(user.role)) return user.role;
   if (user.is_admin) return "admin";
   const fonction = String(user.fonction || "").toLowerCase();
   return fonction.includes("superviseur") || fonction.includes("supervisor") ? "superviseur" : "technicien";
+}
+
+async function userUnits(user) {
+  if (user.role === "admin" || user.toutes_unites) {
+    const remoteMachines = await supabaseRequest("machines", { query: "?select=unite&actif=eq.1" });
+    return [...new Set(remoteMachines.map(row => row.unite).filter(Boolean))].sort();
+  }
+  if (typeof user.id === "string" && user.id.includes("-")) {
+    const rows = await supabaseRequest("effectif_unites", {
+      query: `?select=unite&effectif_id=eq.${encodeURIComponent(user.id)}&order=unite.asc`
+    });
+    return rows.map(row => row.unite).filter(Boolean);
+  }
+  return dbAll("SELECT unite FROM technicien_unites WHERE id_technicien=? ORDER BY unite", [user.id])
+    .map(row => row.unite);
+}
+
+async function remoteEffectifWithUnits() {
+  const [employees, associations] = await Promise.all([
+    supabaseRequest("effectif", { query: "?select=*&order=nom.asc,prenom.asc" }),
+    supabaseRequest("effectif_unites", { query: "?select=effectif_id,unite&order=unite.asc" })
+  ]);
+  const unitsByEmployee = new Map();
+  for (const association of associations) {
+    const key = String(association.effectif_id);
+    if (!unitsByEmployee.has(key)) unitsByEmployee.set(key, []);
+    unitsByEmployee.get(key).push(association.unite);
+  }
+  return employees.map(employee => ({
+    ...employee,
+    is_admin: employee.role === "admin",
+    units: unitsByEmployee.get(String(employee.id)) || []
+  }));
+}
+
+function machineFieldsFromBody(body, includeCreation = false) {
+  const allowed = ["tag", "designation", "unite", "groupe", "zone", "marque", "modele",
+    "numero_serie", "date_mise_service", "actif", "commentaire"];
+  const payload = {};
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(body, key)) payload[key] = body[key];
+  }
+  if (includeCreation) {
+    payload.uuid = crypto.randomUUID();
+    payload.date_creation = new Date().toISOString();
+    payload.source = "web";
+    if (payload.actif === undefined) payload.actif = 1;
+  } else {
+    payload.date_modification = new Date().toISOString();
+  }
+  return payload;
 }
 
 function currentUser(req) {
@@ -634,58 +688,46 @@ app.post("/api/auth/logout", requireAuth, (req, res) => {
 
 app.get("/api/me", requireAuth, (req, res) => res.json(req.user));
 
-app.get("/api/saisie/context", requireAuth, (req, res) => {
-  let units = [];
-  if (req.user.role === "admin" || req.user.toutes_unites) {
-    units = dbAll("SELECT valeur FROM ref_listes WHERE type_liste=? AND actif=1 ORDER BY ordre, valeur", ["unite"])
-      .map(row => row.valeur);
-  } else {
-    units = dbAll(
-      "SELECT unite FROM technicien_unites WHERE id_technicien=? ORDER BY unite",
-      [req.user.id]
-    ).map(row => row.unite);
+app.get("/api/saisie/context", requireAuth, async (req, res) => {
+  try {
+    const [units, machinesAll, employees] = await Promise.all([
+      userUnits(req.user),
+      supabaseRequest("machines", { query: "?select=id,tag,designation,unite&actif=eq.1&order=unite.asc,tag.asc" }),
+      supabaseRequest("effectif", { query: "?select=nom,prenom,service,actif&actif=eq.true&order=nom.asc,prenom.asc" })
+    ]);
+    const technician = [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim();
+    const machines = machinesAll.filter(row => req.user.role === "admin" || req.user.toutes_unites || units.includes(row.unite));
+    const services = [...new Set(employees.map(row => row.service).filter(Boolean))].sort();
+    const zones = [...new Set((await supabaseRequest("machines", { query: "?select=zone&actif=eq.1" })).map(row => row.zone).filter(Boolean))].sort();
+    const technicians = req.user.role === "admin"
+      ? employees.map(row => ({ name: [row.nom, row.prenom].filter(Boolean).join(" ").trim(), service: row.service || "" }))
+      : [{ name: technician, service: req.user.service || "" }];
+    res.json({ units, machines, services, zones, technicians, technician, service: req.user.service || "" });
+  } catch (error) {
+    res.status(502).json({ error: `Chargement du contexte Supabase impossible: ${error.message}` });
   }
-  const technician = [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim();
-  const machines = dbAll(
-    "SELECT id, tag, designation, unite FROM machines WHERE actif=1 ORDER BY unite, tag"
-  ).filter(row => req.user.role === "admin" || req.user.toutes_unites || units.includes(row.unite));
-  const services = dbAll(
-    "SELECT valeur FROM ref_listes WHERE type_liste=? AND actif=1 ORDER BY ordre, valeur",
-    ["service"]
-  ).map(row => row.valeur);
-  const zones = dbAll(
-    "SELECT valeur FROM ref_listes WHERE type_liste=? AND actif=1 ORDER BY ordre, valeur",
-    ["zone"]
-  ).map(row => row.valeur);
-  const technicians = req.user.role === "admin"
-    ? dbAll("SELECT nom, prenom, service FROM techniciens WHERE actif=1 ORDER BY nom, prenom")
-        .map(row => ({ name: [row.nom, row.prenom].filter(Boolean).join(" ").trim(), service: row.service || "" }))
-    : [{ name: technician, service: req.user.service || "" }];
-  res.json({ units, machines, services, zones, technicians, technician, service: req.user.service || "" });
 });
 
-app.get("/api/pm/context", requireAuth, (req, res) => {
-  const units = req.user.role === "admin" || req.user.toutes_unites
-    ? dbAll("SELECT valeur FROM ref_listes WHERE type_liste=? AND actif=1 ORDER BY ordre, valeur", ["unite"]).map(row => row.valeur)
-    : dbAll("SELECT unite FROM technicien_unites WHERE id_technicien=? ORDER BY unite", [req.user.id]).map(row => row.unite);
-  const machines = dbAll("SELECT id, tag, designation, unite FROM machines WHERE actif=1 ORDER BY unite, tag")
-    .filter(row => req.user.role === "admin" || req.user.toutes_unites || units.includes(row.unite));
-  const technician = [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim();
-  res.json({
-    units,
-    machines,
-    technician,
-    technicians: req.user.role === "admin"
-      ? dbAll("SELECT id, nom, prenom FROM techniciens WHERE actif=1 ORDER BY nom, prenom").map(row => ({
-          id: row.id,
-          name: [row.nom, row.prenom].filter(Boolean).join(" ").trim()
-        }))
-      : [{ id: req.user.id, name: technician }],
-    frequencies: dbAll(
-      "SELECT valeur FROM ref_listes WHERE type_liste=? AND actif=1 ORDER BY ordre, valeur",
-      ["frequence_pm"]
-    ).map(row => row.valeur)
-  });
+app.get("/api/pm/context", requireAuth, async (req, res) => {
+  try {
+    const [units, allMachines, employees, programmes] = await Promise.all([
+      userUnits(req.user),
+      supabaseRequest("machines", { query: "?select=id,tag,designation,unite&actif=eq.1&order=unite.asc,tag.asc" }),
+      supabaseRequest("effectif", { query: "?select=id,nom,prenom,actif&actif=eq.true&order=nom.asc,prenom.asc" }),
+      supabaseRequest("pm_programmees", { query: "?select=frequence" })
+    ]);
+    const machines = allMachines.filter(row => req.user.role === "admin" || req.user.toutes_unites || units.includes(row.unite));
+    const technician = [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim();
+    res.json({
+      units, machines, technician,
+      technicians: req.user.role === "admin"
+        ? employees.map(row => ({ id: row.id, name: [row.nom, row.prenom].filter(Boolean).join(" ").trim() }))
+        : [{ id: req.user.id, name: technician }],
+      frequencies: [...new Set(programmes.map(row => row.frequence).filter(Boolean))].sort()
+    });
+  } catch (error) {
+    res.status(502).json({ error: `Chargement du contexte Supabase impossible: ${error.message}` });
+  }
 });
 
 app.get("/api/operating/context", requireAuth, (req, res) => {
@@ -867,6 +909,20 @@ app.get("/api/dashboard", requireAuth, requireModule("accueil"), async (req, res
 });
 
 app.get("/api/modules/:module", requireAuth, (req, res, next) => requireModule(req.params.module)(req, res, next), async (req, res) => {
+  if (req.params.module === "machines") {
+    try {
+      return res.json(await supabaseRequest("machines", { query: "?select=*&order=tag.asc" }));
+    } catch (error) {
+      return res.status(502).json({ error: `Chargement des machines depuis Supabase impossible: ${error.message}` });
+    }
+  }
+  if (req.params.module === "effectif") {
+    try {
+      return res.json(await remoteEffectifWithUnits());
+    } catch (error) {
+      return res.status(502).json({ error: `Chargement de l'effectif depuis Supabase impossible: ${error.message}` });
+    }
+  }
   const tables = {
     machines: "machines",
     effectif: "techniciens",
@@ -1095,16 +1151,20 @@ app.put("/api/users/:id/role", requireAuth, requireModule("parametres"), async (
   res.json({ ok: true });
 });
 
-app.get("/api/effectif/context", requireAuth, requireModule("effectif"), (_req, res) => {
-  const values = type => dbAll(
-    "SELECT valeur FROM ref_listes WHERE type_liste=? AND actif=1 ORDER BY ordre, valeur",
-    [type]
-  ).map(row => row.valeur);
-  res.json({
-    units: values("unite"),
-    services: values("service"),
-    functions: values("fonction")
-  });
+app.get("/api/effectif/context", requireAuth, requireModule("effectif"), async (_req, res) => {
+  try {
+    const [machines, employees] = await Promise.all([
+      supabaseRequest("machines", { query: "?select=unite,zone&actif=eq.1" }),
+      supabaseRequest("effectif", { query: "?select=service,fonction&actif=eq.true" })
+    ]);
+    res.json({
+      units: [...new Set(machines.map(row => row.unite).filter(Boolean))].sort(),
+      services: [...new Set(employees.map(row => row.service).filter(Boolean))].sort(),
+      functions: [...new Set(employees.map(row => row.fonction).filter(Boolean))].sort()
+    });
+  } catch (error) {
+    res.status(502).json({ error: `Chargement du référentiel Supabase impossible: ${error.message}` });
+  }
 });
 
 async function syncEffectifToSupabase(employee) {
@@ -1168,85 +1228,97 @@ app.post("/api/effectif", requireAuth, requireModule("parametres"), async (req, 
   if (!matricule || !nom || !service || !fonction) {
     return res.status(400).json({ error: "Matricule, nom, service et fonction sont obligatoires" });
   }
-  const existing = dbGet("SELECT id FROM techniciens WHERE matricule=? LIMIT 1", [matricule]);
-  if (existing) return res.status(409).json({ error: "Ce matricule existe déjà" });
-  const uuid = crypto.randomUUID();
-  const baseUsername = `${nom}.${String(req.body.prenom || "")}`.trim().toLowerCase().replace(/[^a-z0-9._]/g, "");
-  let username = baseUsername || `user${matricule}`;
-  let suffix = 1;
-  while (dbGet("SELECT id FROM techniciens WHERE LOWER(username)=? LIMIT 1", [username])) {
-    username = `${baseUsername}${suffix++}`;
-  }
-  const password = matricule || "1234";
-  const now = localTimestamp();
-  const result = dbRun(
-    `INSERT INTO techniciens
-      (uuid, matricule, nom, prenom, service, fonction, telephone, email,
-       date_recrutement, date_depart, actif, is_admin, toutes_unites,
-       username, password_hash, date_creation)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [uuid, matricule, nom, prenom, service, fonction,
-     req.body.telephone || "", req.body.email || "",
-     req.body.date_recrutement || "", req.body.date_depart || "",
-     req.body.actif === false ? 0 : 1, req.body.is_admin ? 1 : 0, req.body.toutes_unites ? 1 : 0,
-     username, bcrypt.hashSync(password, 10), now]
-  );
-  dbRun("DELETE FROM technicien_unites WHERE id_technicien=?", [result.id]);
-  if (!req.body.toutes_unites) {
-    for (const unite of Array.isArray(req.body.units) ? req.body.units : []) {
-      dbRun("INSERT OR IGNORE INTO technicien_unites (id_technicien, unite, date_creation) VALUES (?, ?, ?)",
-        [result.id, unite, now]);
-    }
-  }
-  persistDatabase();
-  const employee = dbGet("SELECT * FROM techniciens WHERE id=?", [result.id]);
   try {
-    const remote = await syncEffectifToSupabase(employee);
-    if (!remote) throw new Error("La réponse Supabase ne contient pas d'identifiant effectif");
+    const duplicate = await supabaseRequest("effectif", {
+      query: `?select=id&matricule=eq.${encodeURIComponent(matricule)}&limit=1`
+    });
+    if (duplicate.length) return res.status(409).json({ error: "Ce matricule existe déjà" });
+
+    const baseUsername = `${nom}.${prenom}`.trim().toLowerCase().normalize("NFD")
+      .replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9._]/g, "");
+    let username = baseUsername || `user${matricule}`;
+    let suffix = 1;
+    while ((await supabaseRequest("effectif", {
+      query: `?select=id&username=ilike.${encodeURIComponent(username)}&limit=1`
+    })).length) username = `${baseUsername || `user${matricule}`}${suffix++}`;
+
+    const role = req.body.is_admin ? "admin" :
+      (/superviseur|supervisor/i.test(fonction) ? "superviseur" : "technicien");
+    const payload = {
+      matricule, nom, prenom, service, fonction, role,
+      actif: req.body.actif !== false,
+      date_recrutement: req.body.date_recrutement || null,
+      date_depart: req.body.date_depart || null,
+      toutes_unites: Boolean(req.body.toutes_unites),
+      username,
+      password_hash: bcrypt.hashSync(matricule, 10)
+    };
+    const created = await supabaseRequest("effectif", {
+      method: "POST", prefer: "return=representation", body: [payload]
+    });
+    const employee = created?.[0];
+    if (!employee?.id) throw new Error("Supabase n'a pas retourné l'identifiant du nouvel employé");
+
+    const units = req.body.toutes_unites ? [] :
+      [...new Set((Array.isArray(req.body.units) ? req.body.units : []).map(value => String(value).trim()).filter(Boolean))];
+    if (units.length) {
+      await supabaseRequest("effectif_unites", {
+        method: "POST", prefer: "return=minimal",
+        body: units.map(unite => ({ effectif_id: employee.id, unite }))
+      });
+    }
+    return res.status(201).json({ ...employee, is_admin: role === "admin", units });
   } catch (error) {
-    return res.status(502).json({ error: `Effectif enregistré localement mais non synchronisé: ${error.message}` });
+    return res.status(502).json({ error: `Création Supabase impossible: ${error.message}` });
   }
-  res.status(201).json(employee);
 });
 
 app.put("/api/effectif/:id", requireAuth, requireModule("parametres"), async (req, res) => {
-  const id = Number(req.params.id);
-  const employee = dbGet("SELECT * FROM techniciens WHERE id=?", [id]);
-  if (!employee) return res.status(404).json({ error: "Employé introuvable" });
+  const id = String(req.params.id || "");
   const matricule = String(req.body.matricule || "").trim();
   const nom = String(req.body.nom || "").trim();
+  const prenom = String(req.body.prenom || "").trim();
   const service = String(req.body.service || "").trim();
   const fonction = String(req.body.fonction || "").trim();
-  if (!matricule || !nom || !service || !fonction) {
+  if (!id || !matricule || !nom || !service || !fonction) {
     return res.status(400).json({ error: "Matricule, nom, service et fonction sont obligatoires" });
   }
-  const duplicate = dbGet("SELECT id FROM techniciens WHERE matricule=? AND id<>? LIMIT 1", [matricule, id]);
-  if (duplicate) return res.status(409).json({ error: "Ce matricule existe déjà" });
-  dbRun(
-    `UPDATE techniciens SET matricule=?, nom=?, prenom=?, service=?, fonction=?,
-     telephone=?, email=?, date_recrutement=?, date_depart=?, actif=?, is_admin=?,
-     toutes_unites=?, date_modification=? WHERE id=?`,
-    [matricule, nom, String(req.body.prenom || "").trim(), service, fonction,
-     String(req.body.telephone || ""), String(req.body.email || ""),
-     String(req.body.date_recrutement || ""), String(req.body.date_depart || ""),
-     req.body.actif === false ? 0 : 1, req.body.is_admin ? 1 : 0,
-     req.body.toutes_unites ? 1 : 0, localTimestamp(), id]
-  );
-  dbRun("DELETE FROM technicien_unites WHERE id_technicien=?", [id]);
-  if (!req.body.toutes_unites) {
-    for (const unite of Array.isArray(req.body.units) ? req.body.units : []) {
-      dbRun("INSERT OR IGNORE INTO technicien_unites (id_technicien, unite, date_creation) VALUES (?, ?, ?)",
-        [id, unite, localTimestamp()]);
-    }
-  }
-  persistDatabase();
-  const updated = dbGet("SELECT * FROM techniciens WHERE id=?", [id]);
   try {
-    await syncEffectifToSupabase(updated);
+    const duplicate = await supabaseRequest("effectif", {
+      query: `?select=id&matricule=eq.${encodeURIComponent(matricule)}&id=neq.${encodeURIComponent(id)}&limit=1`
+    });
+    if (duplicate.length) return res.status(409).json({ error: "Ce matricule existe déjà" });
+    const role = req.body.is_admin ? "admin" :
+      (/superviseur|supervisor/i.test(fonction) ? "superviseur" : "technicien");
+    const payload = {
+      matricule, nom, prenom, service, fonction, role,
+      actif: req.body.actif !== false,
+      date_recrutement: req.body.date_recrutement || null,
+      date_depart: req.body.date_depart || null,
+      toutes_unites: Boolean(req.body.toutes_unites),
+      updated_at: new Date().toISOString()
+    };
+    const updated = await supabaseRequest("effectif", {
+      method: "PATCH", query: `?id=eq.${encodeURIComponent(id)}&select=*`,
+      prefer: "return=representation", body: payload
+    });
+    if (!updated?.length) return res.status(404).json({ error: "Employé introuvable" });
+
+    await supabaseRequest("effectif_unites", {
+      method: "DELETE", query: `?effectif_id=eq.${encodeURIComponent(id)}`
+    });
+    const units = req.body.toutes_unites ? [] :
+      [...new Set((Array.isArray(req.body.units) ? req.body.units : []).map(value => String(value).trim()).filter(Boolean))];
+    if (units.length) {
+      await supabaseRequest("effectif_unites", {
+        method: "POST", prefer: "return=minimal",
+        body: units.map(unite => ({ effectif_id: id, unite }))
+      });
+    }
+    return res.json({ ...updated[0], is_admin: role === "admin", units });
   } catch (error) {
-    return res.status(502).json({ error: `Effectif modifié localement mais non synchronisé: ${error.message}` });
+    return res.status(502).json({ error: `Modification Supabase impossible: ${error.message}` });
   }
-  res.json(updated);
 });
 
 app.post("/api/pannes", requireAuth, (req, res, next) => {
@@ -1487,8 +1559,22 @@ app.get("/api/tables/:table", async (req, res) => {
   res.json(rows.map(row => { const result = { ...row }; delete result.password_hash; return result; }));
 });
 
-app.post("/api/tables/:table", async (req, res) => {
+app.post("/api/tables/:table", requireAuth, async (req, res) => {
   const table = req.params.table;
+  if (table === "machines") {
+    try {
+      const payload = machineFieldsFromBody(req.body, true);
+      if (!payload.tag || !payload.designation || !payload.unite) {
+        return res.status(400).json({ error: "Tag, désignation et unité sont obligatoires" });
+      }
+      const created = await supabaseRequest("machines", {
+        method: "POST", prefer: "return=representation", body: [payload]
+      });
+      return res.status(201).json(created?.[0] || { ok: true });
+    } catch (error) {
+      return res.status(502).json({ error: `Enregistrement machine Supabase impossible: ${error.message}` });
+    }
+  }
   const allowedColumns = await tableColumns(table);
   const fields = Object.keys(req.body).filter(key =>
     allowedColumns.has(key) && !["id", "uuid", "password_hash"].includes(key));
@@ -1510,7 +1596,25 @@ app.post("/api/tables/:table", async (req, res) => {
   res.status(201).json({ id: result.id });
 });
 
-app.put("/api/tables/:table/:id", async (req, res) => {
+app.put("/api/tables/:table/:id", requireAuth, async (req, res) => {
+  if (req.params.table === "machines") {
+    try {
+      const payload = machineFieldsFromBody(req.body, false);
+      if (!Object.keys(payload).some(key => key !== "date_modification")) {
+        return res.status(400).json({ error: "Aucune donnée machine à modifier" });
+      }
+      const updated = await supabaseRequest("machines", {
+        method: "PATCH",
+        query: `?id=eq.${encodeURIComponent(req.params.id)}&select=*`,
+        prefer: "return=representation",
+        body: payload
+      });
+      if (!updated?.length) return res.status(404).json({ error: "Machine introuvable" });
+      return res.json(updated[0]);
+    } catch (error) {
+      return res.status(502).json({ error: `Modification machine Supabase impossible: ${error.message}` });
+    }
+  }
   const allowedColumns = await tableColumns(req.params.table);
   const fields = Object.keys(req.body).filter(key =>
     allowedColumns.has(key) && !["id", "uuid", "password_hash", "date_creation"].includes(key));
@@ -1524,7 +1628,17 @@ app.put("/api/tables/:table/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
-app.delete("/api/tables/:table/:id", async (req, res) => {
+app.delete("/api/tables/:table/:id", requireAuth, async (req, res) => {
+  if (req.params.table === "machines") {
+    try {
+      await supabaseRequest("machines", {
+        method: "DELETE", query: `?id=eq.${encodeURIComponent(req.params.id)}`
+      });
+      return res.json({ ok: true });
+    } catch (error) {
+      return res.status(502).json({ error: `Suppression machine Supabase impossible: ${error.message}` });
+    }
+  }
   dbRun(`DELETE FROM ${req.params.table} WHERE id=?`, [req.params.id]);
   res.json({ ok: true });
 });
