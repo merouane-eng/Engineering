@@ -8,6 +8,7 @@ import {
   Filter, TrendingUp, BarChart3, PieChart,
 } from "lucide-react";
 import "./styles.css";
+import { useLanguage, LanguageSwitch } from "./i18n";
 
 const modules = [
   ["accueil", "Accueil", LayoutDashboard],
@@ -72,7 +73,7 @@ async function api(path, options = {}) {
   return body;
 }
 
-function Login({ onLogin }) {
+function Login({ onLogin, language, setLanguage }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -99,6 +100,7 @@ function Login({ onLogin }) {
     }
   };
   return <main className="loginPage">
+    <LanguageSwitch language={language} setLanguage={setLanguage} className="loginLanguage" />
     <form className="loginCard" onSubmit={submit}>
       <div className="loginBrand"><img src="/engineering-logo.svg" alt="Engineering GMAO" /></div>
       <h1>Engineering</h1>
@@ -751,6 +753,7 @@ function OperatingTime({ user }) {
 }
 
 function App() {
+  const { language, setLanguage } = useLanguage();
   const [showSplash, setShowSplash] = useState(true);
   useEffect(() => { const timer = window.setTimeout(() => setShowSplash(false), 1500); return () => window.clearTimeout(timer); }, []);
   const saved = localStorage.getItem("engineering_user");
@@ -760,11 +763,12 @@ function App() {
   const login = value => { localStorage.setItem("engineering_user", JSON.stringify(value)); setUser(value); };
   const logout = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch {} localStorage.removeItem("engineering_token"); localStorage.removeItem("engineering_user"); setUser(null); };
   if (showSplash) return <main className="appSplash"><div className="appSplashGlow"/><img src="/engineering-logo.svg" alt="Engineering GMAO" /><div className="appSplashName">ENGINEERING</div><div className="appSplashCaption">GESTION DE MAINTENANCE INDUSTRIELLE</div><span className="appSplashLoader"/></main>;
-  if (!user) return <Login onLogin={login} />;
+  if (!user) return <Login onLogin={login} language={language} setLanguage={setLanguage} />;
   const allowed = item => item === "parametres" ? user.role === "admin" : true;
   const content = module === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : module === "stats" ? <Stats /> : module === "saisie" ? <FailureEntry user={user} /> : module === "pm" ? <PreventiveMaintenance user={user} /> : module === "operating" ? <OperatingTime user={user} /> : module === "effectif" ? <Effectif user={user} /> :
     module === "parametres" ? <AccessSettings user={user} /> : <DataPage key={module} module={module} user={user} />;
   return <div className="appShell">
+    <LanguageSwitch language={language} setLanguage={setLanguage} className="appLanguage" />
     <aside className={menuOpen ? "sidebar open" : "sidebar"}>
       <div className="brand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>GMAO · Maintenance</small></span></div>
       <nav>{modules.filter(([id]) => allowed(id)).map(([id, label, Icon]) => <button key={id} className={`moduleNav module-${id} ${module === id ? "active" : ""}`} onClick={() => { setModule(id); setMenuOpen(false); }}><span className="moduleNavIcon"><Icon /></span><span>{label}</span></button>)}</nav>
