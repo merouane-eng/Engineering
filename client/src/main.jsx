@@ -739,15 +739,13 @@ function OperatingTime({ user }) {
 
 function App() {
   const { language, setLanguage } = useLanguage();
-  const [showSplash, setShowSplash] = useState(true);
-  useEffect(() => { const timer = window.setTimeout(() => setShowSplash(false), 1500); return () => window.clearTimeout(timer); }, []);
+  // Afficher immédiatement l'écran de connexion ou l'application.
   const saved = localStorage.getItem("engineering_user");
   const [user, setUser] = useState(saved ? JSON.parse(saved) : null);
   const [module, setModule] = useState("accueil");
   const [menuOpen, setMenuOpen] = useState(false);
   const login = value => { localStorage.setItem("engineering_user", JSON.stringify(value)); setUser(value); };
   const logout = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch {} localStorage.removeItem("engineering_token"); localStorage.removeItem("engineering_user"); setUser(null); };
-  if (showSplash) return <main className="appSplash"><div className="appSplashGlow"/><img src="/engineering-logo.svg" alt="Engineering GMAO" /><div className="appSplashName">ENGINEERING</div><div className="appSplashCaption">GESTION DE MAINTENANCE INDUSTRIELLE</div><span className="appSplashLoader"/></main>;
   if (!user) return <Login onLogin={login} language={language} setLanguage={setLanguage} />;
   const allowed = item => item === "parametres" ? user.role === "admin" : true;
   const content = module === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : module === "stats" ? <Stats /> : module === "saisie" ? <FailureEntry user={user} /> : module === "pm" ? <PreventiveMaintenance user={user} /> : module === "operating" ? <OperatingTime user={user} /> : module === "effectif" ? <Effectif user={user} /> :
