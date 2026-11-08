@@ -1135,20 +1135,39 @@ app.post("/api/pm/:id/realiser", requireAuth, async (req, res) => {
 app.put("/api/users/:id/password", requireAuth, requireModule("parametres"), async (req, res) => {
   const password = String(req.body.password || "");
   if (password.length < 4) return res.status(400).json({ error: "Mot de passe trop court" });
-  dbRun("UPDATE techniciens SET password_hash=?, date_modification=? WHERE id=?", [
-    bcrypt.hashSync(password, 10), new Date().toISOString(), req.params.id
-  ]);
-  res.json({ ok: true });
+  try {
+    const updated = await supabaseRequest("effectif", {
+      method: "PATCH",
+      query: `?id=eq.${encodeURIComponent(req.params.id)}`,
+      prefer: "return=minimal",
+      body: { password_hash: bcrypt.hashSync(password, 10), updated_at: new Date().toISOString() }
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(502).json({ error: `Mise à jour du mot de passe impossible: ${error.message}` });
+  }
 });
 
 app.put("/api/users/:id/role", requireAuth, requireModule("parametres"), async (req, res) => {
   const role = String(req.body.role || "");
   if (!["admin", "superviseur", "technicien"].includes(role)) return res.status(400).json({ error: "Rôle invalide" });
-  dbRun(
-    "UPDATE techniciens SET is_admin=?, fonction=?, date_modification=? WHERE id=?",
-    [role === "admin" ? 1 : 0, role === "superviseur" ? "Superviseur" : "Technicien", new Date().toISOString(), req.params.id]
-  );
-  res.json({ ok: true });
+  try {
+    const current = await supabaseRequest("effectif", {
+      query: `?select=fonction&id=eq.${encodeURIComponent(req.params.id)}&limit=1`
+    });
+    if (!current.length) return res.status(404).json({ error: "Employé introuvable" });
+    const fonction = role === "superviseur" ? "Superviseur" :
+      role === "admin" && current[0].fonction ? current[0].fonction : "Technicien";
+    await supabaseRequest("effectif", {
+      method: "PATCH",
+      query: `?id=eq.${encodeURIComponent(req.params.id)}`,
+      prefer: "return=minimal",
+      body: { role, fonction, updated_at: new Date().toISOString() }
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(502).json({ error: `Mise à jour du rôle impossible: ${error.message}` });
+  }
 });
 
 app.get("/api/effectif/context", requireAuth, requireModule("effectif"), async (_req, res) => {
