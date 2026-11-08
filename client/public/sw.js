@@ -1,9 +1,7 @@
-/* ============================================================
-   Service Worker — Engineering PWA
-   Mise en cache des ressources statiques pour le hors-ligne
-   ============================================================ */
-
-const CACHE_NAME = "engineering-v1";
+/* Service Worker — Engineering PWA
+ * Versionné pour forcer le renouvellement des anciennes ressources.
+ */
+const CACHE_NAME = "engineering-v2";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
@@ -20,53 +18,65 @@ const STATIC_ASSETS = [
   "/icons/apple-touch-icon.svg"
 ];
 
-// Installation : mise en cache des ressources statiques
 self.addEventListener("install", event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(STATIC_ASSETS))
+      .catch(error => console.warn("[PWA] Cache initial indisponible :", error))
   );
   self.skipWaiting();
 });
 
-// Activation : nettoyage des anciens caches
 self.addEventListener("activate", event => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
-        keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
+        keys.filter(key => key.startsWith("engineering-") && key !== CACHE_NAME)
+          .map(key => caches.delete(key))
       )
     )
   );
   self.clients.claim();
 });
 
-// Interception des requêtes : cache-first pour les assets statiques,
-// network-first pour les appels API
 self.addEventListener("fetch", event => {
-  const { request } = event;
+  const request = event.request;
   const url = new URL(request.url);
 
-  // Requêtes API : tenter le réseau, fallback cache si disponible
+  if (request.method !== "GET" || url.origin !== self.location.origin) return;
+
+  // Ne jamais mettre en cache les réponses API : elles peuvent contenir
+  // des données utilisateur et doivent toujours refléter l'état du serveur.
   if (url.pathname.startsWith("/api/")) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // Toujours vérifier la dernière version de l'application auprès du serveur.
+  if (request.mode === "navigate" || url.pathname === "/" || url.pathname === "/index.html") {
     event.respondWith(
       fetch(request)
         .then(response => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put("/index.html", copy));
+          }
           return response;
         })
-        .catch(() => caches.match(request))
+        .catch(() => caches.match("/index.html"))
     );
     return;
   }
 
-  // Assets statiques : cache-first
+  // Les fichiers compilés Vite portent un nom versionné : cache-first est sûr.
   event.respondWith(
     caches.match(request).then(cached => {
       if (cached) return cached;
       return fetch(request).then(response => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+        }
         return response;
       });
     })
