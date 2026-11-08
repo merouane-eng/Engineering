@@ -4,8 +4,8 @@ import { registerSW } from "./registerSW";
 import {
   Activity, CalendarClock, Gauge, LayoutDashboard, LogOut, Menu,
   Settings, Siren, Users, Wrench, ClipboardPlus, ClipboardList, Search, Plus, Save, X,
-  ArrowUpRight, CalendarDays, CheckCircle2, CircleAlert, Clock3, PlusCircle, ClipboardCheck
- Filter, TrendingUp, BarChart3, PieChart,
+  ArrowUpRight, CalendarDays, CheckCircle2, CircleAlert, Clock3, PlusCircle, ClipboardCheck,
+  Filter, TrendingUp, BarChart3, PieChart,
 } from "lucide-react";
 import "./styles.css";
 
