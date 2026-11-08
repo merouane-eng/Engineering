@@ -1,5 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180">
-  <rect width="180" height="180" rx="36" fill="#07111f"/>
-  <circle cx="90" cy="78" r="36" fill="#57c7ff"/>
-  <path d="M70 110 h40 v20 h-40 z" fill="#57c7ff" stroke="#57c7ff" stroke-width="4"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#54c5ff"/><stop offset=".42" stop-color="#0878e9"/><stop offset="1" stop-color="#001c63"/></linearGradient><linearGradient id="edge" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#8ee5ff"/><stop offset="1" stop-color="#0061d6"/></linearGradient><linearGradient id="steel" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset=".5" stop-color="#b7c8e0"/><stop offset="1" stop-color="#7186a8"/></linearGradient><filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="8"/></filter></defs>
+<rect x="20" y="20" width="472" height="472" rx="76" fill="#00123d" opacity=".6" filter="url(#shadow)"/>
+<rect x="18" y="14" width="476" height="476" rx="74" fill="url(#bg)" stroke="url(#edge)" stroke-width="9"/>
+<rect x="31" y="27" width="450" height="450" rx="62" fill="none" stroke="#8bdcff" stroke-opacity=".7" stroke-width="3"/>
+<g opacity=".32" fill="none" stroke="#b5eaff" stroke-width="8"><path d="M363 140v-43h22v43m-8-42V78h22v62m-8-23h19v25m-72 0v-28h18v28m-42 0v-18h15v18"/></g>
+<g transform="translate(220 205)"><path d="M0-128 28-119 51-139 77-112 106-116 119-80 151-65 145-31 166-4 146 26 151 60 119 77 109 111 75 115 51 141 24 119-9 129-28 100-64 94-77 61-112 47-108 12-132-11-111-42-119-74-85-88-70-119-35-116-18-142Z" fill="url(#steel)" stroke="#eaf5ff" stroke-width="5"/><circle r="91" fill="#f8fbff" stroke="#0a2d73" stroke-width="9"/><circle r="73" fill="#fff" stroke="#d6e3f5" stroke-width="3"/><path d="M-60-30C-15-82 46-78 79-42L48-24C22-45-9-43-29-21L58 26C24 73-34 71-69 30L-45 9C-23 31 4 33 23 16Z" fill="#079b48"/><path d="M-4-46h25v98H-4z" fill="#e51e2a"/><path d="M-65-29h61v17h-61z" fill="#fff"/><path d="M22-48h55v17H22z" fill="#fff"/></g>
+<g transform="translate(359 286) rotate(-43)" fill="url(#steel)" stroke="#092c70" stroke-width="8" stroke-linejoin="round"><path d="M-17-12 2-31a32 32 0 0 0 38-39l-22 22-22-22 22-22a32 32 0 0 0-39 38l-18 19 16 16-70 70a20 20 0 0 0 28 28l70-70Z"/><circle cx="-92" cy="75" r="8" fill="#173e7b" stroke="none"/></g>
+<path d="M35 349c55 53 130 62 204 44 52-13 97-39 138-77" fill="none" stroke="#8ce4ff" stroke-width="8" stroke-linecap="round"/>
+<path d="M35 374h442v83H35z" fill="#001b56" opacity=".88"/><text x="256" y="414" text-anchor="middle" font-family="Arial,sans-serif" font-weight="900" font-size="39" letter-spacing="1.5" fill="#fff">ENGINEERING</text><text x="256" y="449" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="22" letter-spacing="12" fill="#e9f6ff">GMAO</text>
 </svg>
