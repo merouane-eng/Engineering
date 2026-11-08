@@ -159,14 +159,14 @@ function Dashboard({ user, onNavigate }) {
   </div>;
 }
 function Stats() {
-  const [dataset,setDataset]=useState({pannes:[],pm:[],operating:[],machines:[],effectif:[]});
+  const [dataset,setDataset]=useState({pannes:[],pm:[],operating:[],machines:[],units:[]});
   const [period,setPeriod]=useState("30"),[unit,setUnit]=useState("Toutes les unités"),[loading,setLoading]=useState(true),[error,setError]=useState("");
   const load=async()=>{
     setLoading(true);setError("");
-    const names=["liste","pm","operating","machines","effectif"],keys=["pannes","pm","operating","machines","effectif"];
+    const names=["liste","pm","operating","machines","operating/context"],keys=["pannes","pm","operating","machines","units"];
     const results=await Promise.allSettled(names.map(name=>api("/api/modules/"+name)));
-    const next={pannes:[],pm:[],operating:[],machines:[],effectif:[]};
-    results.forEach((r,i)=>{if(r.status==="fulfilled"&&Array.isArray(r.value))next[keys[i]]=r.value;});
+    const next={pannes:[],pm:[],operating:[],machines:[],units:[]};
+    results.forEach((r,i)=>{if(r.status!=="fulfilled")return;if(keys[i]==="units")next.units=Array.isArray(r.value?.units)?r.value.units:[];else if(Array.isArray(r.value))next[keys[i]]=r.value;});
     if(results.every(r=>r.status==="rejected"))setError("Impossible de charger les statistiques. Vérifiez la connexion puis réessayez.");
     else if(results.some(r=>r.status==="rejected"))setError("Certaines données ne sont pas accessibles. Les indicateurs concernés peuvent être incomplets.");
     setDataset(next);setLoading(false);
@@ -180,7 +180,7 @@ function Stats() {
   const inUnit=row=>unit==="Toutes les unités"||row.unite===unit;
   const pannes=dataset.pannes.filter(row=>inUnit(row)&&inPeriod(row.date_panne));
   const pm=dataset.pm.filter(row=>inUnit(row)&&inPeriod(row.date_prevue));
-  const operating=dataset.operating.filter(row=>inPeriod(row.date_jour)&&dataset.machines.some(machine=>machine.tag===row.machine&&(unit==="Toutes les unités"||machine.unite===unit)));
+  const operating=dataset.operating.filter(row=>inPeriod(row.date_jour)&&dataset.machines.some(machine=>machine.tag===row.machine&&dataset.units.includes(machine.unite)&&(unit==="Toutes les unités"||machine.unite===unit)));
   const open=pannes.filter(row=>String(row.statut||"").toLowerCase()!=="close");
   const closed=pannes.filter(row=>String(row.statut||"").toLowerCase()==="close");
   const realized=["réalisée","realisee","non conforme"];
@@ -190,14 +190,14 @@ function Stats() {
   const operatingHours=operating.reduce((sum,row)=>sum+Math.max(0,Number(row.heures_marche||0)),0);
   const plannedHours=operating.reduce((sum,row)=>sum+Math.max(0,Number(row.heures_planifiees||0)),0);
   const stopHours=operating.reduce((sum,row)=>sum+Math.max(0,Number(row.heures_arret||0)),0);
-  const downtimeHours=totalDowntime/60+stopHours;
+  const closedDowntime=closed.reduce((sum,row)=>sum+Math.max(0,Number(row.downtime||0)),0);
   const availability=plannedHours>0?Math.max(0,Math.min(100,operatingHours/plannedHours*100)):null;
   const closureRate=pannes.length?closed.length/pannes.length*100:0;
   const pmRate=pm.length?completedPM.length/pm.length*100:0;
-  const mttr=closed.length?totalDowntime/closed.length:null;
+  const mttr=closed.length?closedDowntime/closed.length:null;
   const mtbf=pannes.length?operatingHours/pannes.length:null;
   const fmt=value=>new Intl.NumberFormat("fr-FR",{maximumFractionDigits:1}).format(value);
-  const units=["Toutes les unités",...new Set([...dataset.machines.map(r=>r.unite),...dataset.pannes.map(r=>r.unite)].filter(Boolean))].sort((a,b)=>a==="Toutes les unités"?-1:a.localeCompare(b,"fr"));
+  const units=["Toutes les unités",...dataset.units].sort((a,b)=>a.localeCompare(b,"fr"));
   const months=Array.from({length:6},(_,i)=>{const d=new Date(today.getFullYear(),today.getMonth()-5+i,1);return {key:d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"),label:new Intl.DateTimeFormat("fr-FR",{month:"short"}).format(d)};});
   const monthly=months.map(m=>({...m,count:dataset.pannes.filter(r=>inUnit(r)&&String(r.date_panne||"").slice(0,7)===m.key).length}));
   const maxMonth=Math.max(1,...monthly.map(m=>m.count));
@@ -212,7 +212,7 @@ function Stats() {
     ["MTBF estimé",mtbf===null?"—":fmt(mtbf)+" h","Marche / nombre de pannes",Gauge,"cyan"],
     ["Disponibilité",availability===null?"—":fmt(availability)+" %","Marche / heures planifiées saisies",TrendingUp,"green"],
     ["Heures de marche",fmt(operatingHours)+" h","Operating Time enregistré",Gauge,"blue"],
-    ["Heures d’arrêt OT",fmt(downtimeHours)+" h","Operating Time + arrêts WO",Clock3,"orange"],
+    ["Heures d’arrêt OT",fmt(stopHours)+" h","Heures d’arrêt saisies dans Operating Time",Clock3,"orange"],
     ["PM planifiées",pm.length,"Préventif prévu sur la période",CalendarClock,"cyan"],
     ["PM réalisées",completedPM.length,fmt(pmRate)+" % du planning",CheckCircle2,"green"],
     ["PM en retard",overduePM.length,"À réaliser avant aujourd’hui",CircleAlert,"red"]
@@ -229,7 +229,7 @@ function Stats() {
       <article className="statsPanel"><div className="statsPanelHead"><div><span className="eyebrow">ANALYSE ÉQUIPEMENT</span><h3>Machines les plus en panne</h3><p>Top 6 sur la période sélectionnée</p></div><span className="statsPanelIcon"><Wrench/></span></div>{topMachines.length?<div className="statsRanking">{topMachines.map(([name,value],i)=><div className="statsRankRow" key={name}><span className="statsRankNumber">{String(i+1).padStart(2,"0")}</span><div className="statsRankBody"><div><strong>{name}</strong><b>{value}</b></div><span className="statsRankTrack"><i style={{width:value/maxMachine*100+"%"}}/></span></div></div>)}</div>:<div className="statsEmpty">Aucune panne sur cette sélection.</div>}</article>
       <article className="statsPanel"><div className="statsPanelHead"><div><span className="eyebrow">MAINTENANCE PRÉVENTIVE</span><h3>Respect du planning PM</h3><p>État des interventions préventives</p></div><span className="statsPanelIcon"><CalendarClock/></span></div><div className="statsPmSummary"><div><strong>{pm.length}</strong><span>PM planifiées</span></div><div><strong>{completedPM.length}</strong><span>Réalisées</span></div><div><strong>{overduePM.length}</strong><span>En retard</span></div></div><div className="statsProgress"><div><span>Taux de réalisation</span><strong>{fmt(pmRate)}%</strong></div><span className="statsProgressTrack"><i className="pm" style={{width:Math.min(100,pmRate)+"%"}}/></span></div><div className="statsPmFoot"><span><span className="statsLegendDot closed"/> Réalisées</span><span><span className="statsLegendDot open"/> À suivre</span></div></article>
     </section>
-    <section className="statsBottomGrid"><article className="statsPanel statsInsight"><span className="statsInsightIcon"><Gauge/></span><div><span className="eyebrow">FIABILITÉ & DISPONIBILITÉ</span><h3>Lecture des indicateurs</h3><p>{availability===null?"La disponibilité sera calculée dès que des heures planifiées et des heures de marche seront enregistrées dans Operating Time.":"La disponibilité calculée sur les relevés Operating Time est de "+fmt(availability)+" %. Elle repose sur les heures de marche et les heures planifiées renseignées."}</p><p>{mttr===null?"Le MTTR sera disponible après clôture des premiers ordres de travail avec une durée d’arrêt renseignée.":"Le MTTR moyen observé est de "+fmt(mttr)+" minutes sur "+closed.length+" panne(s) clôturée(s)."}</p></div></article><article className="statsPanel"><div className="statsPanelHead"><div><span className="eyebrow">PÉRIMÈTRE</span><h3>Ressources suivies</h3></div><span className="statsPanelIcon"><Users/></span></div><div className="statsResourceRows"><div><Wrench/><span>Machines actives</span><strong>{dataset.machines.filter(r=>Number(r.actif)===1&&(unit==="Toutes les unités"||r.unite===unit)).length}</strong></div><div><Users/><span>Effectif chargé</span><strong>{dataset.effectif.length}</strong></div><div><CalendarClock/><span>Relevés Operating Time</span><strong>{operating.length}</strong></div></div></article></section>
+    <section className="statsBottomGrid"><article className="statsPanel statsInsight"><span className="statsInsightIcon"><Gauge/></span><div><span className="eyebrow">FIABILITÉ & DISPONIBILITÉ</span><h3>Lecture des indicateurs</h3><p>{availability===null?"La disponibilité sera calculée dès que des heures planifiées et des heures de marche seront enregistrées dans Operating Time.":"La disponibilité calculée sur les relevés Operating Time est de "+fmt(availability)+" %. Elle repose sur les heures de marche et les heures planifiées renseignées."}</p><p>{mttr===null?"Le MTTR sera disponible après clôture des premiers ordres de travail avec une durée d’arrêt renseignée.":"Le MTTR moyen observé est de "+fmt(mttr)+" minutes sur "+closed.length+" panne(s) clôturée(s)."}</p></div></article><article className="statsPanel"><div className="statsPanelHead"><div><span className="eyebrow">PÉRIMÈTRE</span><h3>Ressources suivies</h3></div><span className="statsPanelIcon"><Users/></span></div><div className="statsResourceRows"><div><Wrench/><span>Machines actives</span><strong>{dataset.machines.filter(r=>dataset.units.includes(r.unite)&&Number(r.actif)===1&&(unit==="Toutes les unités"||r.unite===unit)).length}</strong></div><div><CalendarClock/><span>Relevés Operating Time</span><strong>{operating.length}</strong></div></div></article></section>
     <div className="statsFooter"><span>ENGINEERING · Tableau de bord statistique</span><span>Indicateurs calculés à partir des enregistrements disponibles</span></div>
   </div>;
 }
