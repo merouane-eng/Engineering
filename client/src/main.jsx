@@ -8,7 +8,7 @@ import {
   Filter, TrendingUp, BarChart3, PieChart,
 } from "lucide-react";
 import "./styles.css";
-import { useLanguage, LanguageSwitch } from "./i18n";
+import { useLanguage, LanguageSwitch } from "./i18n.jsx";
 
 const modules = [
   ["accueil", "Accueil", LayoutDashboard],
