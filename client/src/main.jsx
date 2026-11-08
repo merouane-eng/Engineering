@@ -100,7 +100,7 @@ function Login({ onLogin }) {
   };
   return <main className="loginPage">
     <form className="loginCard" onSubmit={submit}>
-      <div className="loginMark"><Wrench /></div>
+      <div className="loginBrand"><img src="/engineering-logo.svg" alt="Engineering GMAO" /></div>
       <h1>Engineering</h1>
       <p>Gestion de maintenance industrielle</p>
       <label>Nom d'utilisateur</label>
@@ -751,19 +751,22 @@ function OperatingTime({ user }) {
 }
 
 function App() {
+  const [showSplash, setShowSplash] = useState(true);
+  useEffect(() => { const timer = window.setTimeout(() => setShowSplash(false), 1500); return () => window.clearTimeout(timer); }, []);
   const saved = localStorage.getItem("engineering_user");
   const [user, setUser] = useState(saved ? JSON.parse(saved) : null);
   const [module, setModule] = useState("accueil");
   const [menuOpen, setMenuOpen] = useState(false);
   const login = value => { localStorage.setItem("engineering_user", JSON.stringify(value)); setUser(value); };
   const logout = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch {} localStorage.removeItem("engineering_token"); localStorage.removeItem("engineering_user"); setUser(null); };
+  if (showSplash) return <main className="appSplash"><div className="appSplashGlow"/><img src="/engineering-logo.svg" alt="Engineering GMAO" /><div className="appSplashName">ENGINEERING</div><div className="appSplashCaption">GESTION DE MAINTENANCE INDUSTRIELLE</div><span className="appSplashLoader"/></main>;
   if (!user) return <Login onLogin={login} />;
   const allowed = item => item === "parametres" ? user.role === "admin" : true;
   const content = module === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : module === "stats" ? <Stats /> : module === "saisie" ? <FailureEntry user={user} /> : module === "pm" ? <PreventiveMaintenance user={user} /> : module === "operating" ? <OperatingTime user={user} /> : module === "effectif" ? <Effectif user={user} /> :
     module === "parametres" ? <AccessSettings user={user} /> : <DataPage key={module} module={module} user={user} />;
   return <div className="appShell">
     <aside className={menuOpen ? "sidebar open" : "sidebar"}>
-      <div className="brand"><div><Wrench /></div><span><strong>Engineering</strong><small>Maintenance web</small></span></div>
+      <div className="brand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>GMAO · Maintenance</small></span></div>
       <nav>{modules.filter(([id]) => allowed(id)).map(([id, label, Icon]) => <button key={id} className={module === id ? "active" : ""} onClick={() => { setModule(id); setMenuOpen(false); }}><Icon /><span>{label}</span></button>)}</nav>
       <div className="userBlock"><div className="avatar">{user.nom?.[0]}{user.prenom?.[0]}</div><div><strong>{user.nom} {user.prenom || ""}</strong><small>{user.role}</small></div><button title="Déconnexion" onClick={logout}><LogOut /></button></div>
     </aside>
