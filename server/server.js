@@ -930,8 +930,8 @@ app.get("/api/dashboard", requireAuth, requireModule("accueil"), async (req, res
     const [machines, employees, pannes, pm] = await Promise.all([
       supabaseRequest("machines", { query: "?select=tag,unite,actif" }),
       supabaseRequest("effectif", { query: "?select=id,actif" }),
-      supabaseRequest("pannes", { query: "?select=unite,statut,date_panne&limit=5000" }),
-      supabaseRequest("pm_programmees", { query: "?select=unite,statut,date_prevue&limit=3000" })
+      supabaseRequest("pannes", { query: "?select=id,wo,machine,probleme,unite,statut,date_panne&order=date_panne.desc&limit=5000" }),
+      supabaseRequest("pm_programmees", { query: "?select=id,machine_tag,unite,statut,date_prevue,frequence&order=date_prevue.asc&limit=3000" })
     ]);
     const month = localTimestamp().slice(0, 7);
     const visibleMachines = machines.filter(row => units.includes(row.unite) && Number(row.actif) === 1);
@@ -951,6 +951,8 @@ app.get("/api/dashboard", requireAuth, requireModule("accueil"), async (req, res
       pannesFermees: panneRows.filter(row => row.statut === "Close" && String(row.date_panne || "").startsWith(month)).length,
       pmProgrammee: pmRows.filter(row => !realized.includes(row.statut) && (String(row.date_prevue || "").startsWith(month) || String(row.date_prevue || "") < `${month}-01`)).length,
       pmRealisees: pmRows.filter(row => realized.includes(row.statut) && String(row.date_prevue || "").startsWith(month)).length,
+      recentPannes: panneRows.slice().sort((a, b) => String(b.date_panne || "").localeCompare(String(a.date_panne || ""))).slice(0, 6),
+      upcomingPM: pmRows.filter(row => !realized.includes(row.statut)).slice().sort((a, b) => String(a.date_prevue || "").localeCompare(String(b.date_prevue || ""))).slice(0, 5),
       month
     });
   } catch (error) {
