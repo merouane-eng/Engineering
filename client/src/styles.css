@@ -93,3 +93,8 @@ input:focus, select:focus { border-color:#57c7ff; box-shadow:0 0 0 3px rgba(87,1
   .formGrid { grid-template-columns:1fr; }.hero { align-items:flex-start; }.live { display:none; }
   .piecePicker { grid-template-columns:1fr 1fr; }.piecePicker .secondary { grid-column:1/-1; }.usedParts > div { grid-template-columns:1fr auto; }
 }
+
+.machineParts { margin-top: 16px; padding: 14px; border: 1px solid #263650; border-radius: 9px; background: #0a1525; }
+.machineParts h4 { margin: 0 0 10px; color: #57c7ff; font-size: 13px; }
+.machineParts .usedParts { margin-top: 8px; }
+.machineParts .usedParts > div { grid-template-columns: minmax(150px,1fr) minmax(130px,1fr) auto; }
