@@ -745,15 +745,17 @@ app.get("/api/me", requireAuth, (req, res) => res.json(req.user));
 
 app.get("/api/saisie/context", requireAuth, async (req, res) => {
   try {
-    const [units, machinesAll, employees] = await Promise.all([
-      userUnits(req.user),
-      supabaseRequest("machines", { query: "?select=id,tag,designation,unite&actif=eq.1&order=unite.asc,tag.asc" }),
+    const [units, allMachines, employees] = await Promise.all([
+      allowedUnitsForUser(req.user),
+      supabaseRequest("machines", { query: "?select=id,tag,designation,unite,zone&actif=eq.1&order=unite.asc,tag.asc" }),
       supabaseRequest("effectif", { query: "?select=nom,prenom,service,actif&actif=eq.true&order=nom.asc,prenom.asc" })
     ]);
+    const machines = allMachines.filter(row =>
+      (req.user.role === "admin" || req.user.toutes_unites || units.includes(row.unite))
+    );
     const technician = [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim();
-    const machines = machinesAll.filter(row => req.user.role === "admin" || req.user.toutes_unites || units.includes(row.unite));
     const services = [...new Set(employees.map(row => row.service).filter(Boolean))].sort();
-    const zones = [...new Set((await supabaseRequest("machines", { query: "?select=zone&actif=eq.1" })).map(row => row.zone).filter(Boolean))].sort();
+    const zones = [...new Set(machines.map(row => String(row.zone || "").trim()).filter(Boolean))].sort();
     const technicians = req.user.role === "admin"
       ? employees.map(row => ({ name: [row.nom, row.prenom].filter(Boolean).join(" ").trim(), service: row.service || "" }))
       : [{ name: technician, service: req.user.service || "" }];
@@ -762,6 +764,8 @@ app.get("/api/saisie/context", requireAuth, async (req, res) => {
     res.status(502).json({ error: `Chargement du contexte Supabase impossible: ${error.message}` });
   }
 });
+
+
 
 app.get("/api/pm/context", requireAuth, async (req, res) => {
   try {
@@ -832,51 +836,93 @@ app.post("/api/operating", requireAuth, async (req, res) => {
 
 
 
-app.get("/api/pieces/context", requireAuth, (req, res) => {
-  const machine = String(req.query.machine || "");
-  const catalog = dbAll(
-    "SELECT id, uuid, reference, nom, description FROM pieces_rechange WHERE actif=1 ORDER BY nom COLLATE NOCASE, reference COLLATE NOCASE LIMIT 500"
-  );
-  const machineParts = machine ? dbAll(
-    `SELECT pr.id, pr.uuid, pr.reference, pr.nom, pr.description, pm.commentaire
-       FROM pieces_machines pm
-       JOIN pieces_rechange pr ON pr.id=pm.id_piece
-      WHERE pm.machine=? AND pr.actif=1
-      ORDER BY pr.nom COLLATE NOCASE, pr.reference COLLATE NOCASE`,
-    [machine]
-  ) : [];
-  const history = dbAll(
-    `SELECT pu.*, p.wo AS panne_wo
-       FROM pieces_utilisees pu
-       LEFT JOIN pannes p ON p.id=pu.id_panne
-      ORDER BY pu.date_utilisation DESC, pu.id DESC LIMIT 200`
-  );
-  res.json({ catalog, machineParts, history });
+async function attachPieceToMachine(piece, machine) {
+  if (!piece || !machine) return;
+  const existing = await supabaseRequest("machine_pieces", {
+    query: `?select=id&machine=eq.${encodeURIComponent(machine)}&piece_id=eq.${encodeURIComponent(piece.id)}&limit=1`
+  });
+  if (existing.length) return;
+  await supabaseRequest("machine_pieces", {
+    method: "POST",
+    query: "?select=*",
+    prefer: "return=representation",
+    body: [{ machine, piece_id: piece.id, reference: piece.reference || null, nom: piece.nom, created_at: new Date().toISOString() }]
+  });
+}
+
+app.get("/api/pieces/context", requireAuth, async (req, res) => {
+  try {
+    const machine = String(req.query.machine || "").trim();
+    const [catalog, links, history] = await Promise.all([
+      supabaseRequest("pieces", { query: "?select=id,reference,nom,description,actif&actif=eq.true&order=nom.asc&limit=500" }),
+      machine
+        ? supabaseRequest("machine_pieces", { query: `?select=id,piece_id,reference,nom,machine&machine=eq.${encodeURIComponent(machine)}&order=nom.asc` })
+        : Promise.resolve([]),
+      machine
+        ? supabaseRequest("panne_pieces", { query: `?select=id,panne_id,piece_id,machine,wo,reference,nom,quantite,date_utilisation,technicien&machine=eq.${encodeURIComponent(machine)}&order=date_utilisation.desc,id.desc&limit=200` })
+        : Promise.resolve([])
+    ]);
+    const catalogById = new Map(catalog.map(piece => [String(piece.id), piece]));
+    const machineParts = links.map(link => ({
+      ...catalogById.get(String(link.piece_id)),
+      id: link.piece_id,
+      reference: link.reference || catalogById.get(String(link.piece_id))?.reference || "",
+      nom: link.nom || catalogById.get(String(link.piece_id))?.nom || ""
+    })).filter(piece => piece.nom);
+    res.json({ catalog, machineParts, history });
+  } catch (error) {
+    res.status(502).json({ error: `Chargement du référentiel pièces impossible: ${error.message}` });
+  }
 });
 
-app.post("/api/pieces", requireAuth, (req, res) => {
-  const nom = String(req.body.nom || "").trim();
-  const reference = String(req.body.reference || "").trim() || null;
-  const description = String(req.body.description || "").trim() || null;
-  if (!nom) return res.status(400).json({ error: "Le nom de la pièce est obligatoire" });
-  const existing = reference
-    ? dbGet("SELECT * FROM pieces_rechange WHERE LOWER(reference)=LOWER(?) LIMIT 1", [reference])
-    : dbGet("SELECT * FROM pieces_rechange WHERE LOWER(nom)=LOWER(?) LIMIT 1", [nom]);
-  if (existing) return res.status(409).json({ error: "Cette pièce existe déjà dans le référentiel" });
-  const now = new Date().toISOString();
-  const result = dbRun(
-    "INSERT INTO pieces_rechange (uuid, reference, nom, description, actif, date_creation) VALUES (?, ?, ?, ?, 1, ?)",
-    [crypto.randomUUID(), reference, nom, description, now]
-  );
-  const piece = dbGet("SELECT * FROM pieces_rechange WHERE id=?", [result.id]);
-  supabaseRequest("pieces_rechange", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates,return=minimal",
-    query: "?on_conflict=uuid",
-    body: [{ uuid: piece.uuid, reference, nom, description, actif: 1, date_creation: now }]
-  }).catch(error => console.error("Synchronisation pièce:", error.message));
-  res.status(201).json(piece);
+app.post("/api/pieces", requireAuth, async (req, res) => {
+  try {
+    const nom = String(req.body.nom || "").trim();
+    const reference = String(req.body.reference || "").trim() || null;
+    const description = String(req.body.description || "").trim() || null;
+    const machine = String(req.body.machine || "").trim();
+    if (!nom) return res.status(400).json({ error: "Le nom de la pièce est obligatoire" });
+    if (reference) {
+      const duplicate = await supabaseRequest("pieces", { query: `?select=id&reference=eq.${encodeURIComponent(reference)}&limit=1` });
+      if (duplicate.length) return res.status(409).json({ error: "Cette référence existe déjà" });
+    }
+    const duplicateName = await supabaseRequest("pieces", { query: `?select=id&nom=ilike.${encodeURIComponent(nom)}&limit=1` });
+    if (duplicateName.length) return res.status(409).json({ error: "Cette pièce existe déjà dans le référentiel" });
+    if (machine) {
+      const machines = await supabaseRequest("machines", { query: `?select=tag,unite&tag=eq.${encodeURIComponent(machine)}&limit=1` });
+      const allowed = await allowedUnitsForUser(req.user);
+      if (!machines[0] || !allowed.includes(machines[0].unite)) return res.status(403).json({ error: "Machine non autorisée" });
+    }
+    const rows = await supabaseRequest("pieces", {
+      method: "POST", query: "?select=*", prefer: "return=representation",
+      body: [{ reference, nom, description, actif: true }]
+    });
+    const piece = rows?.[0];
+    if (!piece) throw new Error("Supabase n'a pas retourné la pièce créée");
+    if (machine) await attachPieceToMachine(piece, machine);
+    return res.status(201).json(piece);
+  } catch (error) {
+    res.status(502).json({ error: `Création pièce impossible: ${error.message}` });
+  }
 });
+
+app.post("/api/pieces/:id/machines", requireAuth, async (req, res) => {
+  try {
+    const machine = String(req.body.machine || "").trim();
+    if (!machine) return res.status(400).json({ error: "Machine obligatoire" });
+    const machines = await supabaseRequest("machines", { query: `?select=tag,unite&tag=eq.${encodeURIComponent(machine)}&limit=1` });
+    const allowed = await allowedUnitsForUser(req.user);
+    if (!machines[0] || !allowed.includes(machines[0].unite)) return res.status(403).json({ error: "Machine non autorisée" });
+    const pieces = await supabaseRequest("pieces", { query: `?select=id,reference,nom&actif=eq.true&id=eq.${encodeURIComponent(req.params.id)}&limit=1` });
+    if (!pieces[0]) return res.status(404).json({ error: "Pièce introuvable" });
+    await attachPieceToMachine(pieces[0], machine);
+    return res.json({ ok: true });
+  } catch (error) {
+    res.status(502).json({ error: `Association de la pièce impossible: ${error.message}` });
+  }
+});
+
+
 
 app.get("/api/dashboard", requireAuth, requireModule("accueil"), async (req, res) => {
   try {
@@ -1217,12 +1263,13 @@ app.post("/api/pannes", requireAuth, async (req, res) => {
     if (missing.length) return res.status(400).json({ error: `Champs obligatoires manquants : ${missing.join(", ")}` });
     const allowed = await allowedUnitsForUser(req.user);
     if (!allowed.includes(body.unite)) return res.status(403).json({ error: "Unité non autorisée" });
-    const machineRows = await supabaseRequest("machines", { query: `?select=tag,unite&tag=eq.${encodeURIComponent(body.machine)}&limit=1` });
-    if (!machineRows[0] || machineRows[0].unite !== body.unite) return res.status(400).json({ error: "Machine et unité incohérentes" });
+    const machineRows = await supabaseRequest("machines", { query: `?select=tag,unite,zone&tag=eq.${encodeURIComponent(body.machine)}&limit=1` });
+    const machine = machineRows[0];
+    if (!machine || machine.unite !== body.unite) return res.status(400).json({ error: "Machine et unité incohérentes" });
     const duplicate = await supabaseRequest("pannes", { query: `?select=id&wo=eq.${encodeURIComponent(String(body.wo).trim())}&limit=1` });
     if (duplicate.length) return res.status(409).json({ error: "Ce numéro WO existe déjà" });
     const split = value => {
-      const text = String(value || "").trim().replace("T"," ");
+      const text = String(value || "").trim().replace("T", " ");
       const match = text.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2})(?::\d{2})?)?/);
       return match ? { date: match[1], time: match[2] || "" } : { date: text.slice(0,10), time: "" };
     };
@@ -1231,24 +1278,48 @@ app.post("/api/pannes", requireAuth, async (req, res) => {
     const monthNames = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
     const startDate = dateStart.date && dateStart.time ? `${dateStart.date} ${dateStart.time}` : String(body.date_debut || "");
     const endDate = dateEnd.date && dateEnd.time ? `${dateEnd.date} ${dateEnd.time}` : String(body.date_fin || "");
+    const selectedParts = Array.isArray(body.pieces) ? body.pieces.filter(piece => String(piece.nom_piece || "").trim()) : [];
     const payload = {
       uuid: crypto.randomUUID(), wo: String(body.wo).trim(), date_panne: panneDate.date,
       heure_panne: body.heure_panne || panneDate.time || null,
       date_debut: startDate || null, date_fin: endDate || null, unite: body.unite,
-      machine: body.machine, probleme: body.probleme, area: body.area,
+      machine: body.machine, probleme: body.probleme, area: String(body.area || machine.zone || "").trim(),
       service: req.user.role === "admin" ? body.service : (req.user.service || ""),
       mois: monthNames[Number(panneDate.date.slice(5,7))-1] || "",
       technicien: req.user.role === "admin" ? body.technicien : [req.user.nom,req.user.prenom].filter(Boolean).join(" "),
       downtime: Number(body.downtime || 0), statut: body.statut,
-      commentaire: body.commentaire, pieces_consommees: (Array.isArray(body.pieces)?body.pieces:[]).map(p=>`${p.reference_piece ? p.reference_piece+" — " : ""}${p.nom_piece || ""} (x${Math.max(1,Number(p.quantite||1))})`).filter(Boolean).join("; ") || null,
+      commentaire: body.commentaire,
+      pieces_consommees: selectedParts.map(piece => `${piece.reference_piece ? piece.reference_piece+" — " : ""}${piece.nom_piece} (x${Math.max(1,Number(piece.quantite||1))})`).join("; ") || null,
       date_creation: localTimestamp(), source: "web"
     };
     if (!payload.heure_panne || !payload.date_debut || !payload.date_fin || !payload.service || !payload.technicien) {
       return res.status(400).json({ error: "Date/heure, début, fin, service et technicien sont obligatoires" });
     }
-    const created = await supabaseRequest("pannes", { method: "POST", query: "?select=*", prefer: "return=representation", body: [payload] });
-    return res.status(201).json(created?.[0] || payload);
-  } catch (error) { return res.status(502).json({ error: `Enregistrement panne Supabase impossible: ${error.message}` }); }
+    const createdRows = await supabaseRequest("pannes", { method: "POST", query: "?select=*", prefer: "return=representation", body: [payload] });
+    const created = createdRows?.[0];
+    if (!created) throw new Error("La panne a été envoyée mais Supabase n'a retourné aucun enregistrement");
+    if (selectedParts.length) {
+      const historyRows = [];
+      for (const part of selectedParts) {
+        let pieceId = part.piece_id ? Number(part.piece_id) : null;
+        if (pieceId) {
+          const found = await supabaseRequest("pieces", { query: `?select=id,reference,nom&actif=eq.true&id=eq.${encodeURIComponent(pieceId)}&limit=1` });
+          if (!found[0]) pieceId = null;
+          else await attachPieceToMachine(found[0], body.machine);
+        }
+        historyRows.push({
+          panne_id: created.id, piece_id: pieceId, machine: body.machine, wo: payload.wo,
+          reference: part.reference_piece || null, nom: String(part.nom_piece).trim(),
+          quantite: Math.max(1, Number(part.quantite || 1)), date_utilisation: panneDate.date,
+          technicien: payload.technicien || null
+        });
+      }
+      await supabaseRequest("panne_pieces", { method: "POST", query: "?select=*", prefer: "return=representation", body: historyRows });
+    }
+    return res.status(201).json(created);
+  } catch (error) {
+    return res.status(502).json({ error: `Enregistrement panne Supabase impossible: ${error.message}` });
+  }
 });
 
 
