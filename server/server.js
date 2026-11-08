@@ -537,9 +537,10 @@ async function userUnits(user) {
     const remoteMachines = await supabaseRequest("machines", { query: "?select=unite&actif=eq.1" });
     return [...new Set(remoteMachines.map(row => row.unite).filter(Boolean))].sort();
   }
-  if (typeof user.id === "string" && user.id.includes("-")) {
+  const remoteUserId = user.supabase_id || user.id;
+  if (typeof remoteUserId === "string" && remoteUserId.includes("-")) {
     const rows = await supabaseRequest("effectif_unites", {
-      query: `?select=unite&effectif_id=eq.${encodeURIComponent(user.id)}&order=unite.asc`
+      query: `?select=unite&effectif_id=eq.${encodeURIComponent(remoteUserId)}&order=unite.asc`
     });
     return rows.map(row => row.unite).filter(Boolean);
   }
@@ -591,7 +592,14 @@ function currentUser(req) {
 function requireAuth(req, res, next) {
   const user = currentUser(req);
   if (!user) return res.status(401).json({ error: "Session expirée" });
-  req.user = user;
+  const localEmployee = user.matricule
+    ? dbGet("SELECT id FROM techniciens WHERE matricule=? LIMIT 1", [user.matricule])
+    : null;
+  req.user = {
+    ...user,
+    supabase_id: user.supabase_id || (typeof user.id === "string" ? user.id : null),
+    id: localEmployee?.id ?? user.id
+  };
   next();
 }
 
