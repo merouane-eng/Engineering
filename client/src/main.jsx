@@ -5,7 +5,7 @@ import {
   Activity, CalendarClock, Gauge, LayoutDashboard, LogOut, Menu,
   Settings, Siren, Users, Wrench, ClipboardPlus, ClipboardList, Search, Plus, Save, X,
   ArrowUpRight, CalendarDays, CheckCircle2, CircleAlert, Clock3, PlusCircle, ClipboardCheck,
-  Filter, TrendingUp, BarChart3, PieChart,, Layers, MapPin, Boxes, RotateCcw
+  Filter, TrendingUp, BarChart3, PieChart, Layers, MapPin, Boxes, RotateCcw
 } from "lucide-react";
 import "./styles.css";
 import { useLanguage, LanguageSwitch } from "./i18n.jsx";
