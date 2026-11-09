@@ -5,7 +5,7 @@ import {
   Activity, CalendarClock, Gauge, LayoutDashboard, LogOut, Menu,
   Settings, Siren, Users, Wrench, ClipboardPlus, ClipboardList, Search, Plus, Save, X,
   ArrowUpRight, CalendarDays, CheckCircle2, CircleAlert, Clock3, PlusCircle, ClipboardCheck,
-  Filter, TrendingUp, BarChart3, PieChart, Layers, MapPin, Boxes, RotateCcw
+  Filter, TrendingUp, BarChart3, PieChart, Layers, MapPin, Boxes, RotateCcw, Sun, Moon
 } from "lucide-react";
 import "./styles.css";
 import { useLanguage, LanguageSwitch } from "./i18n.jsx";
@@ -852,6 +852,8 @@ function OperatingTime({ user }) {
 
 function App() {
   const { language, setLanguage } = useLanguage();
+  const [theme, setTheme] = useState(() => localStorage.getItem("engineering_theme") === "light" ? "light" : "dark");
+  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("engineering_theme", theme); }, [theme]);
   // Afficher immédiatement l'écran de connexion ou l'application.
   const saved = localStorage.getItem("engineering_user");
   const [user, setUser] = useState(saved ? JSON.parse(saved) : null);
@@ -868,6 +870,7 @@ function App() {
     <aside className={menuOpen ? "sidebar open" : "sidebar"}>
       <div className="brand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>GMAO · Maintenance</small></span></div>
       <nav>{modules.filter(([id]) => allowed(id)).map(([id, label, Icon]) => <button key={id} className={`moduleNav module-${id} ${module === id ? "active" : ""}`} onClick={() => { setModule(id); setMenuOpen(false); }}><span className="moduleNavIcon"><Icon /></span><span>{label}</span></button>)}</nav>
+      <div className="themePicker" role="group" aria-label="Thème de l’application"><span className="themePickerLabel">APPARENCE</span><div className="themePickerOptions"><button type="button" className={theme === "dark" ? "selected" : ""} aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}><Moon /> Sombre</button><button type="button" className={theme === "light" ? "selected" : ""} aria-pressed={theme === "light"} onClick={() => setTheme("light")}><Sun /> Clair</button></div></div>
       <div className="userBlock"><div className="avatar">{user.nom?.[0]}{user.prenom?.[0]}</div><div><strong>{user.nom} {user.prenom || ""}</strong><small>{user.role}</small></div><button title="Déconnexion" onClick={logout}><LogOut /></button></div>
     </aside>
     {menuOpen && <button className="backdrop" aria-label="Fermer" onClick={() => setMenuOpen(false)} />}
