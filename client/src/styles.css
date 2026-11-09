@@ -259,3 +259,12 @@ input:focus, select:focus { border-color:#57c7ff; box-shadow:0 0 0 3px rgba(87,1
 
 /* Breakdown table: apply the Work Order identifier typography to every cell except Technician */
 .breakdownListMaster tbody td:not(.bl-technician-cell){color:#2869b5;font-family:Inter,"Segoe UI",Arial,sans-serif;font-weight:800;}
+
+/* PM and Operating Time dashboard: reuse the breakdown list visual system */
+.operationsMaster .operationsActions{display:flex;justify-content:flex-end;gap:10px;align-items:center}
+.operationsMaster .operationsActions .primary{display:inline-flex;align-items:center;gap:7px;min-height:39px;border-radius:9px}
+.operationsMaster .operationsActions .primary svg{width:16px;height:16px}
+.operationsMaster .bl-reset{display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.operationsMaster .bl-reset svg{width:14px;height:14px}
+.operationsMaster .bl-kpi strong{overflow-wrap:anywhere}
+@media(max-width:600px){.operationsMaster .operationsActions{justify-content:stretch}.operationsMaster .operationsActions .primary{width:100%;justify-content:center}.operationsMaster .bl-kpi{padding:13px}.operationsMaster .bl-kpi strong{font-size:23px}}
