@@ -225,3 +225,31 @@ input:focus, select:focus { border-color:#57c7ff; box-shadow:0 0 0 3px rgba(87,1
 .effectifMaster .ef-empty{display:flex;flex-direction:column;align-items:center;gap:8px;padding:35px 15px;border:1px dashed #29445d;border-radius:12px;color:#8199af;background:#0d1b2b;text-align:center;font-size:11px}.effectifMaster .ef-empty svg{width:25px;height:25px;color:#6eaed3}
 @media(max-width:1050px){.effectifMaster .ef-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.effectifMaster .ef-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:680px){.effectifMaster .ef-hero{padding:20px 17px}.effectifMaster .ef-hero h1{font-size:22px}.effectifMaster .ef-grid{grid-template-columns:1fr}.effectifMaster .ef-toolbar{align-items:stretch}.effectifMaster .ef-search{flex-basis:100%}.effectifMaster .ef-filter{flex-basis:calc(50% - 8px);min-width:0}.effectifMaster .ef-add{width:100%;justify-content:center}.effectifMaster .ef-results{align-items:flex-start;flex-direction:column}}
+
+
+/* Breakdown list dashboard */
+.breakdownListMaster{display:flex;flex-direction:column;gap:15px;padding-bottom:25px}
+.breakdownListMaster .bl-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}
+.breakdownListMaster .bl-kpi{padding:15px 17px;border:1px solid #e4ebf3;border-radius:13px;background:linear-gradient(145deg,#fff,#f7faff);box-shadow:0 5px 18px #183b6409}
+.breakdownListMaster .bl-kpiTop{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;color:#8292a7;font-size:9px;font-weight:800;letter-spacing:.1em}
+.breakdownListMaster .bl-kpiIcon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px}
+.breakdownListMaster .bl-kpiIcon svg{width:17px;height:17px}
+.breakdownListMaster .bl-blue{color:#2872cf;background:#e7f1ff}.breakdownListMaster .bl-orange{color:#d98235;background:#fff0df}.breakdownListMaster .bl-green{color:#24996b;background:#e4f8ef}.breakdownListMaster .bl-violet{color:#795bd1;background:#f0ebff}
+.breakdownListMaster .bl-kpi strong{display:block;color:#1b3556;font-size:27px;line-height:1.1}
+.breakdownListMaster .bl-kpi small{display:block;margin-top:6px;color:#8291a5;font-size:10px}
+.breakdownListMaster .bl-filters{display:flex;align-items:end;flex-wrap:wrap;gap:10px;padding:14px;border:1px solid #e5ebf3;border-radius:13px;background:#fff}
+.breakdownListMaster .bl-search{display:flex;align-items:center;gap:8px;flex:1 1 190px;min-width:180px;height:39px;padding:0 11px;border:1px solid #dce5f0;border-radius:8px;color:#8192a8;background:#f9fbfe}
+.breakdownListMaster .bl-search svg{width:15px;height:15px}.breakdownListMaster .bl-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:#253d5b;font-size:11px}
+.breakdownListMaster .bl-filter{display:flex;flex:1 1 135px;min-width:125px;flex-direction:column;gap:5px}
+.breakdownListMaster .bl-filter label{color:#71839b;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.breakdownListMaster .bl-filter select,.breakdownListMaster .bl-filter input{box-sizing:border-box;width:100%;height:39px;padding:0 9px;border:1px solid #dce5f0;border-radius:8px;background:#f9fbfe;color:#2b4260;font-size:10px}
+.breakdownListMaster .bl-reset{height:39px;padding:0 11px;border:1px solid #dce5f0;border-radius:8px;background:#f1f6fc;color:#426487;font-size:10px}
+.breakdownListMaster .bl-count{display:flex;justify-content:space-between;gap:10px;color:#8090a5;font-size:10px}.breakdownListMaster .bl-count strong{color:#294563}
+.breakdownListMaster .tableWrap{border:1px solid #e5ebf3;border-radius:12px;background:#fff;overflow-x:auto}
+.breakdownListMaster table{min-width:1100px}
+.breakdownListMaster th{white-space:nowrap}.breakdownListMaster td{vertical-align:middle}
+.breakdownListMaster .bl-wo{font-weight:800;color:#2869b5}
+.breakdownListMaster .bl-tech{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;color:#355675;font-weight:650}
+.breakdownListMaster .bl-tech i{display:grid;place-items:center;width:23px;height:23px;border-radius:7px;background:#eaf3ff;color:#3576bd;font-size:9px;font-style:normal;font-weight:800}
+@media(max-width:900px){.breakdownListMaster .bl-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.breakdownListMaster .bl-filters{align-items:stretch}.breakdownListMaster .bl-search{flex-basis:100%}.breakdownListMaster .bl-filter{flex-basis:calc(50% - 8px);min-width:0}.breakdownListMaster .bl-count{flex-direction:column}}
