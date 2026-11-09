@@ -526,82 +526,95 @@ function AccessSettings({ user }) {
 function Effectif({ user }) {
   const [rows, setRows] = useState([]);
   const [context, setContext] = useState({ units: [], services: [], functions: [] });
-  const [form, setForm] = useState(null);
-  const [query, setQuery] = useState("");
-  const [error, setError] = useState("");
+  const [form, setForm] = useState(null), [query, setQuery] = useState(""), [error, setError] = useState("");
+  const [unitFilter, setUnitFilter] = useState(""), [functionFilter, setFunctionFilter] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState(""), [statusFilter, setStatusFilter] = useState("all");
   const load = () => api("/api/modules/effectif").then(setRows);
   useEffect(() => {
     load().catch(() => setRows([]));
     api("/api/effectif/context").then(setContext).catch(() => setContext({ units: [], services: [], functions: [] }));
   }, []);
-  const openNew = () => setForm({
-    matricule: "", nom: "", prenom: "", service: "", fonction: "",
-    telephone: "", email: "", date_recrutement: "", date_depart: "",
-    actif: true, is_admin: false,
-    toutes_unites: false, units: []
-  });
-  const openEdit = row => setForm({
-    ...row, actif: Boolean(row.actif), is_admin: Boolean(row.is_admin),
-    toutes_unites: Boolean(row.toutes_unites), units: row.units || [],
-  });
+  const openNew = () => setForm({ matricule:"",nom:"",prenom:"",service:"",fonction:"",telephone:"",email:"",date_recrutement:"",date_depart:"",actif:true,is_admin:false,toutes_unites:false,units:[] });
+  const openEdit = row => setForm({ ...row, actif:Boolean(row.actif), is_admin:Boolean(row.is_admin), toutes_unites:Boolean(row.toutes_unites), units:Array.isArray(row.units)?row.units:[] });
   const save = async event => {
-    event.preventDefault();
-    setError("");
-    if (!form.matricule || !form.nom || !form.service || !form.fonction) {
-      setError("Matricule, nom, service et fonction sont obligatoires.");
-      return;
-    }
+    event.preventDefault(); setError("");
+    if (!form.matricule || !form.nom || !form.service || !form.fonction) { setError("Matricule, nom, département et fonction sont obligatoires."); return; }
     try {
-      await api(form.id ? `/api/effectif/${form.id}` : "/api/effectif", {
-        method: form.id ? "PUT" : "POST",
-        body: JSON.stringify(form)
-      });
-      setForm(null);
-      load();
-    } catch (err) { setError(err.message); }
+      await api(form.id ? "/api/effectif/" + form.id : "/api/effectif", { method:form.id?"PUT":"POST", body:JSON.stringify(form) });
+      setForm(null); load();
+    } catch(err) { setError(err.message); }
   };
-  const toggleUnit = unite => setForm(current => ({
-    ...current,
-    units: current.units.includes(unite) ? current.units.filter(value => value !== unite) : [...current.units, unite]
-  }));
-  const filtered = rows.filter(row => JSON.stringify(row).toLowerCase().includes(query.toLowerCase()));
-  return <div>
-    <PageTitle title="Effectif" subtitle={`${rows.length} technicien(s)`} />
-    <section className="toolbar">
-      <div className="search"><Search /><input placeholder="Rechercher..." value={query} onChange={e => setQuery(e.target.value)} /></div>
-      {user.role === "admin" && <button className="primary" onClick={openNew}><Plus /> Ajouter</button>}
+  const toggleUnit = unite => setForm(current => ({ ...current, units:current.units.includes(unite)?current.units.filter(value=>value!==unite):[...current.units,unite] }));
+  const active = value => value===true || value===1 || value==="1" || value==="true";
+  const rowUnits = row => Array.isArray(row.units)?row.units:(row.unite?[row.unite]:[]);
+  const unique = values => [...new Set(values.filter(value=>value&&String(value).trim()).map(value=>String(value).trim()))].sort((a,b)=>a.localeCompare(b,"fr"));
+  const unitOptions = unique([...(context.units||[]),...rows.flatMap(rowUnits)]);
+  const departmentOptions = unique([...(context.services||[]),...rows.map(row=>row.service)]);
+  const functionOptions = unique([...(context.functions||[]),...rows.map(row=>row.fonction)]);
+  const filtered = rows.filter(row =>
+    JSON.stringify(row).toLowerCase().includes(query.trim().toLowerCase()) &&
+    (!unitFilter || active(row.toutes_unites) || rowUnits(row).includes(unitFilter)) &&
+    (!functionFilter || row.fonction===functionFilter) &&
+    (!departmentFilter || row.service===departmentFilter) &&
+    (statusFilter==="all" || (statusFilter==="active"?active(row.actif):!active(row.actif)))
+  );
+  const activeCount=rows.filter(row=>active(row.actif)).length, inactiveCount=rows.length-activeCount;
+  const resetFilters=()=>{setQuery("");setUnitFilter("");setFunctionFilter("");setDepartmentFilter("");setStatusFilter("all");};
+  return <div className="effectifMaster">
+    <section className="ef-hero"><div><span className="ef-eyebrow">ENGINEERING · HUMAN RESOURCES</span><h1>Gestion des effectifs</h1><p>Une vue claire des équipes, des affectations et des compétences par unité.</p></div><div className="ef-heroIcon"><Users /></div></section>
+    <section className="ef-kpis">
+      <article className="ef-kpi"><div className="ef-kpiTop"><span className="ef-kpiIcon blue"><Users /></span><span className="ef-kpiTag">EFFECTIF</span></div><strong>{rows.length}</strong><small>Collaborateurs enregistrés</small></article>
+      <article className="ef-kpi"><div className="ef-kpiTop"><span className="ef-kpiIcon green"><CheckCircle2 /></span><span className="ef-kpiTag">DISPONIBILITÉ</span></div><strong>{activeCount}</strong><small>Collaborateurs actifs</small></article>
+      <article className="ef-kpi"><div className="ef-kpiTop"><span className="ef-kpiIcon violet"><Layers /></span><span className="ef-kpiTag">ORGANISATION</span></div><strong>{departmentOptions.length}</strong><small>Départements représentés</small></article>
+      <article className="ef-kpi"><div className="ef-kpiTop"><span className="ef-kpiIcon orange"><MapPin /></span><span className="ef-kpiTag">COUVERTURE</span></div><strong>{unitOptions.length}</strong><small>Unités référencées · {inactiveCount} inactif(s)</small></article>
     </section>
-    <div className="tableWrap"><table><thead><tr><th>Matricule</th><th>Nom</th><th>Service</th><th>Fonction</th><th>Actif</th><th /></tr></thead>
-      <tbody>{filtered.map(row => <tr key={row.id}><td>{row.matricule}</td><td>{row.nom} {row.prenom || ""}</td><td>{row.service}</td><td>{row.fonction}</td><td>{row.actif ? "Oui" : "Non"}</td>
-        <td className="actions">{user.role === "admin" && <button onClick={() => openEdit(row)}>Modifier</button>}</td></tr>)}</tbody>
-    </table></div>
+    <section className="ef-toolbar">
+      <div className="ef-search"><Search /><input placeholder="Rechercher un nom, matricule, email..." value={query} onChange={e=>setQuery(e.target.value)} /></div>
+      <div className="ef-filter"><label><MapPin /> Unité</label><select value={unitFilter} onChange={e=>setUnitFilter(e.target.value)}><option value="">Toutes les unités</option>{unitOptions.map(value=><option key={value} value={value}>{value}</option>)}</select></div>
+      <div className="ef-filter"><label><Users /> Fonction</label><select value={functionFilter} onChange={e=>setFunctionFilter(e.target.value)}><option value="">Toutes les fonctions</option>{functionOptions.map(value=><option key={value} value={value}>{value}</option>)}</select></div>
+      <div className="ef-filter"><label><Layers /> Département</label><select value={departmentFilter} onChange={e=>setDepartmentFilter(e.target.value)}><option value="">Tous les départements</option>{departmentOptions.map(value=><option key={value} value={value}>{value}</option>)}</select></div>
+      <div className="ef-filter"><label><Filter /> Statut</label><select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="all">Tous les statuts</option><option value="active">Actifs</option><option value="inactive">Inactifs</option></select></div>
+      <button className="ef-reset" onClick={resetFilters}><RotateCcw /> Réinitialiser</button>
+      {user.role==="admin" && <button className="primary ef-add" onClick={openNew}><Plus /> Ajouter</button>}
+    </section>
+    <div className="ef-results"><span><strong>{filtered.length}</strong> résultat(s) affiché(s) sur {rows.length}</span><span>Filtres combinables · Mise à jour à la demande</span></div>
+    {error && <div className="formError">{error}</div>}
+    {filtered.length ? <section className="ef-grid">{filtered.map(row=>{
+      const units=rowUnits(row), initials=((row.prenom||"").trim().slice(0,1)+(row.nom||"").trim().slice(0,1)).toUpperCase()||"—";
+      return <article className="ef-person" key={row.id||row.matricule}>
+        <div className="ef-personHead"><span className="ef-avatar">{initials}</span><div className="ef-personName"><strong>{[row.prenom,row.nom].filter(Boolean).join(" ")||"Nom non renseigné"}</strong><small>Matricule : {row.matricule||"—"}</small></div><span className={"ef-status "+(active(row.actif)?"on":"off")}>{active(row.actif)?"ACTIF":"INACTIF"}</span></div>
+        <div className="ef-personRole"><Users /> {row.fonction||"Fonction non renseignée"}</div>
+        <div className="ef-personMeta">
+          <div className="ef-metaRow"><span>Département</span><strong>{row.service||"—"}</strong></div>
+          <div className="ef-metaRow"><span>Unités</span><div className="ef-unitTags">{active(row.toutes_unites)?<span>Toutes les unités</span>:units.length?units.map(value=><span key={value}>{value}</span>):<span>Non affecté</span>}</div></div>
+          <div className="ef-metaRow"><span>Téléphone</span><strong>{row.telephone||"—"}</strong></div>
+          <div className="ef-metaRow"><span>Email</span><strong>{row.email||"—"}</strong></div>
+        </div>
+        {user.role==="admin" && <div className="ef-personFoot"><button onClick={()=>openEdit(row)}><Save /> Modifier</button></div>}
+      </article>;
+    })}</section>:<div className="ef-empty"><Users /><strong>Aucun collaborateur ne correspond aux filtres.</strong><span>Modifiez les critères ou réinitialisez les filtres.</span></div>}
     {form && <div className="modalBack"><form className="modal" onSubmit={save}>
-      <div className="modalHead"><h3>{form.id ? "Modifier l'effectif" : "Ajouter un technicien"}</h3><button type="button" className="iconButton" onClick={() => setForm(null)}><X /></button></div>
+      <div className="modalHead"><h3>{form.id?"Modifier l'effectif":"Ajouter un technicien"}</h3><button type="button" className="iconButton" onClick={()=>setForm(null)}><X /></button></div>
       <div className="formGrid">
-        <label>Matricule *<input required value={form.matricule} onChange={e => setForm({ ...form, matricule: e.target.value })} /></label>
-        <label>Nom *<input required value={form.nom} onChange={e => setForm({ ...form, nom: e.target.value })} /></label>
-        <label>Prénom<input value={form.prenom || ""} onChange={e => setForm({ ...form, prenom: e.target.value })} /></label>
-        <label>Service *<select required value={form.service || ""} onChange={e => setForm({ ...form, service: e.target.value })}><option value="">Sélectionner</option>{context.services.map(value => <option key={value}>{value}</option>)}</select></label>
-        <label>Fonction *<select required value={form.fonction || ""} onChange={e => setForm({ ...form, fonction: e.target.value })}><option value="">Sélectionner</option>{context.functions.map(value => <option key={value}>{value}</option>)}</select></label>
-        <label>Téléphone<input value={form.telephone || ""} onChange={e => setForm({ ...form, telephone: e.target.value })} /></label>
-        <label>Email<input type="email" value={form.email || ""} onChange={e => setForm({ ...form, email: e.target.value })} /></label>
-        <label>Date de recrutement<input type="date" value={form.date_recrutement || ""} onChange={e => setForm({ ...form, date_recrutement: e.target.value })} /></label>
-        <label>Date de départ<input type="date" value={form.date_depart || ""} onChange={e => setForm({ ...form, date_depart: e.target.value })} /></label>
+        <label>Matricule *<input required value={form.matricule} onChange={e=>setForm({...form,matricule:e.target.value})}/></label>
+        <label>Nom *<input required value={form.nom} onChange={e=>setForm({...form,nom:e.target.value})}/></label>
+        <label>Prénom<input value={form.prenom||""} onChange={e=>setForm({...form,prenom:e.target.value})}/></label>
+        <label>Département *<select required value={form.service||""} onChange={e=>setForm({...form,service:e.target.value})}><option value="">Sélectionner</option>{context.services.map(value=><option key={value}>{value}</option>)}</select></label>
+        <label>Fonction *<select required value={form.fonction||""} onChange={e=>setForm({...form,fonction:e.target.value})}><option value="">Sélectionner</option>{context.functions.map(value=><option key={value}>{value}</option>)}</select></label>
+        <label>Téléphone<input value={form.telephone||""} onChange={e=>setForm({...form,telephone:e.target.value})}/></label>
+        <label>Email<input type="email" value={form.email||""} onChange={e=>setForm({...form,email:e.target.value})}/></label>
+        <label>Date de recrutement<input type="date" value={form.date_recrutement||""} onChange={e=>setForm({...form,date_recrutement:e.target.value})}/></label>
+        <label>Date de départ<input type="date" value={form.date_depart||""} onChange={e=>setForm({...form,date_depart:e.target.value})}/></label>
       </div>
-      <fieldset className="unitPicker"><legend>Unités</legend>
-        <label><input type="checkbox" checked={Boolean(form.toutes_unites)} onChange={e => setForm({ ...form, toutes_unites: e.target.checked })} /> Toutes les unités</label>
-        {!form.toutes_unites && <div className="unitGrid">{context.units.map(unite => <label key={unite}><input type="checkbox" checked={form.units.includes(unite)} onChange={() => toggleUnit(unite)} /> {unite}</label>)}</div>}
+      <fieldset className="unitPicker"><legend>Unités</legend><label><input type="checkbox" checked={Boolean(form.toutes_unites)} onChange={e=>setForm({...form,toutes_unites:e.target.checked})}/> Toutes les unités</label>
+        {!form.toutes_unites && <div className="unitGrid">{context.units.map(unite=><label key={unite}><input type="checkbox" checked={form.units.includes(unite)} onChange={()=>toggleUnit(unite)}/> {unite}</label>)}</div>}
       </fieldset>
-      <div className="formGrid">
-        <label><input type="checkbox" checked={Boolean(form.actif)} onChange={e => setForm({ ...form, actif: e.target.checked })} /> Actif</label>
-        <label><input type="checkbox" checked={Boolean(form.is_admin)} onChange={e => setForm({ ...form, is_admin: e.target.checked })} /> Administrateur</label>
-      </div>
+      <div className="formGrid"><label><input type="checkbox" checked={Boolean(form.actif)} onChange={e=>setForm({...form,actif:e.target.checked})}/> Actif</label><label><input type="checkbox" checked={Boolean(form.is_admin)} onChange={e=>setForm({...form,is_admin:e.target.checked})}/> Administrateur</label></div>
       {error && <div className="formError">{error}</div>}
-      <div className="modalActions"><button type="button" onClick={() => setForm(null)}>Annuler</button><button className="primary" type="submit"><Save /> Enregistrer</button></div>
+      <div className="modalActions"><button type="button" onClick={()=>setForm(null)}>Annuler</button><button className="primary" type="submit"><Save /> Enregistrer</button></div>
     </form></div>}
   </div>;
 }
-
 function PreventiveMaintenance({ user }) {
   const [rows, setRows] = useState([]);
   const [context, setContext] = useState({ units: [], machines: [], technicians: [], technician: "", frequencies: [] });
