@@ -320,7 +320,7 @@ function DataPage({ module, user }) {
   };
   const title = modules.find(item => item[0] === module)?.[1] || module;
   return <div>
-    <PageTitle title={title} subtitle={${rows.length} enregistrement(s)`} />
+    <PageTitle title={title} subtitle={`${rows.length} enregistrement(s)`} />
     <section className="toolbar">
       <div className="search"><Search /><input placeholder="Rechercher..." value={query} onChange={e => setQuery(e.target.value)} /></div>
       {module !== "liste" && <button className="primary" onClick={() => setEditing({})}><Plus /> Ajouter</button>}
