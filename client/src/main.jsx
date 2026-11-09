@@ -302,12 +302,12 @@ function DataPage({ module, user }) {
   const [rows, setRows] = useState([]);
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState(null);
-  const load = () => api(\`/api/modules/\${module}\`).then(setRows);
+  const load = () => api(`/api/modules/${module}`).then(setRows);
   useEffect(() => { load().catch(() => setRows([])); }, [module]);
   const filtered = rows.filter(row => JSON.stringify(row).toLowerCase().includes(query.toLowerCase()));
   const save = async values => {
     const table = tables[module];
-    await api(editing?.id ? \`/api/tables/\${table}/\${editing.id}\` : \`/api/tables/\${table}\`, {
+    await api(editing?.id ? `/api/tables/${table}/${editing.id}` : `/api/tables/${table}`, {
       method: editing?.id ? "PUT" : "POST", body: JSON.stringify(values)
     });
     setEditing(null);
@@ -315,12 +315,12 @@ function DataPage({ module, user }) {
   };
   const remove = async id => {
     if (!window.confirm("Supprimer cet élément ?")) return;
-    await api(\`/api/tables/\${tables[module]}/\${id}\`, { method: "DELETE" });
+    await api(`/api/tables/${tables[module]}/${id}`, { method: "DELETE" });
     load();
   };
   const title = modules.find(item => item[0] === module)?.[1] || module;
   return <div>
-    <PageTitle title={title} subtitle={\${rows.length} enregistrement(s)\`} />
+    <PageTitle title={title} subtitle={${rows.length} enregistrement(s)`} />
     <section className="toolbar">
       <div className="search"><Search /><input placeholder="Rechercher..." value={query} onChange={e => setQuery(e.target.value)} /></div>
       {module !== "liste" && <button className="primary" onClick={() => setEditing({})}><Plus /> Ajouter</button>}
