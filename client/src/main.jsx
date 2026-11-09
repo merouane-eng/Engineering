@@ -36,8 +36,8 @@ const fieldsByModule = {
     ["probleme", "Problème"], ["service", "Service"], ["statut", "Statut"], ["technicien", "Technicien"]
   ],
   liste: [
-    ["wo", "WO"], ["date_panne", "Date panne", "date"], ["unite", "Unité"], ["machine", "Machine"],
-    ["probleme", "Problème"], ["statut", "Statut"], ["commentaire", "Commentaire"], ["pieces_consommees", "Pièces consommées"]
+    ["wo", "WO"], ["date_panne", "Date panne", "date"], ["unite", "Unité"], ["service", "Département"], ["area", "Area"], ["machine", "Machine"],
+    ["probleme", "Problème"], ["technicien", "Technicien"], ["statut", "Statut"], ["commentaire", "Commentaire"], ["pieces_consommees", "Pièces consommées"]
   ],
   pm: [
     ["machine_tag", "Machine"], ["machine_designation", "Désignation"], ["unite", "Unité"],
@@ -299,45 +299,44 @@ function MachinePage({ user }) {
 
 function DataPage({ module, user }) {
   const defs = fieldsByModule[module];
-  const [rows, setRows] = useState([]);
-  const [query, setQuery] = useState("");
-  const [editing, setEditing] = useState(null);
-  const load = () => api(`/api/modules/${module}`).then(setRows);
-  useEffect(() => { load().catch(() => setRows([])); }, [module]);
-  const filtered = rows.filter(row => JSON.stringify(row).toLowerCase().includes(query.toLowerCase()));
-  const save = async values => {
-    const table = tables[module];
-    await api(editing?.id ? `/api/tables/${table}/${editing.id}` : `/api/tables/${table}`, {
-      method: editing?.id ? "PUT" : "POST", body: JSON.stringify(values)
-    });
-    setEditing(null);
-    load();
-  };
-  const remove = async id => {
-    if (!window.confirm("Supprimer cet élément ?")) return;
-    await api(`/api/tables/${tables[module]}/${id}`, { method: "DELETE" });
-    load();
-  };
-  const title = modules.find(item => item[0] === module)?.[1] || module;
-  return <div>
-    <PageTitle title={title} subtitle={`${rows.length} enregistrement(s)`} />
-    <section className="toolbar">
-      <div className="search"><Search /><input placeholder="Rechercher..." value={query} onChange={e => setQuery(e.target.value)} /></div>
-      {module !== "liste" && <button className="primary" onClick={() => setEditing({})}><Plus /> Ajouter</button>}
-    </section>
-    <div className="tableWrap">
-      <table><thead><tr>{defs.map(([key, label]) => <th key={key}>{label}</th>)}<th /></tr></thead>
-        <tbody>{filtered.map(row => <tr key={row.id}>
-          {defs.map(([key]) => <td key={key}>{key === "actif" ? (row[key] ? "Oui" : "Non") : row[key] ?? "—"}</td>)}
-          <td className="actions"><button onClick={() => setEditing(row)}>Modifier</button>{module !== "liste" && <button className="dangerText" onClick={() => remove(row.id)}>Supprimer</button>}</td>
-        </tr>)}</tbody>
-      </table>
-      {!filtered.length && <div className="empty">Aucun résultat</div>}
-    </div>
-    {editing && <Editor fields={defs} values={editing} onClose={() => setEditing(null)} onSave={save} />}
+  const [rows,setRows]=useState([]), [query,setQuery]=useState(""), [editing,setEditing]=useState(null);
+  const [context,setContext]=useState({units:[],services:[],zones:[],technicians:[]});
+  const [unitFilter,setUnitFilter]=useState(""), [departmentFilter,setDepartmentFilter]=useState(""), [areaFilter,setAreaFilter]=useState(""), [technicianFilter,setTechnicianFilter]=useState(""), [monthFilter,setMonthFilter]=useState("");
+  const load=()=>api("/api/modules/"+module).then(setRows);
+  useEffect(()=>{load().catch(()=>setRows([]));if(module==="liste")api("/api/saisie/context").then(setContext).catch(()=>setContext({units:[],services:[],zones:[],technicians:[]}));},[module]);
+  const filtered=rows.filter(row=>{if(!JSON.stringify(row).toLowerCase().includes(query.toLowerCase()))return false;if(module!=="liste")return true;const date=String(row.date_panne||"").slice(0,10);return(!unitFilter||row.unite===unitFilter)&&(!departmentFilter||row.service===departmentFilter)&&(!areaFilter||(row.area||row.zone)===areaFilter)&&(!technicianFilter||row.technicien===technicianFilter)&&(!monthFilter||date.startsWith(monthFilter));});
+  const save=async values=>{const table=tables[module];await api(editing?.id?"/api/tables/"+table+"/"+editing.id:"/api/tables/"+table,{method:editing?.id?"PUT":"POST",body:JSON.stringify(values)});setEditing(null);load();};
+  const remove=async id=>{if(!window.confirm("Supprimer cet élément ?"))return;await api("/api/tables/"+tables[module]+"/"+id,{method:"DELETE"});load();};
+  const title=modules.find(item=>item[0]===module)?.[1]||module;
+  const unique=values=>[...new Set(values.filter(value=>value&&String(value).trim()).map(value=>String(value).trim()))].sort((a,b)=>a.localeCompare(b,"fr"));
+  const units=unique([...(context.units||[]),...rows.map(r=>r.unite)]), departments=unique([...(context.services||[]),...rows.map(r=>r.service)]), areas=unique([...(context.zones||[]),...rows.map(r=>r.area||r.zone)]), technicians=unique([...(context.technicians||[]).map(t=>typeof t==="string"?t:t.name),...rows.map(r=>r.technicien)]);
+  const isOpen=value=>["open","opened","ouvert","ouverte","en cours","pending"].includes(String(value||"").toLowerCase());
+  const openCount=rows.filter(r=>isOpen(r.statut)).length, closedCount=rows.length-openCount, currentMonth=new Date().toISOString().slice(0,7), monthCount=rows.filter(r=>String(r.date_panne||"").slice(0,7)===currentMonth).length;
+  const reset=()=>{setQuery("");setUnitFilter("");setDepartmentFilter("");setAreaFilter("");setTechnicianFilter("");setMonthFilter("");};
+  return <div className={module==="liste"?"breakdownListMaster":""}>
+    <PageTitle title={title} subtitle={filtered.length+" / "+rows.length+" enregistrement(s)"} />
+    {module==="liste"&&<>
+      <section className="bl-kpis">
+        <article className="bl-kpi"><div className="bl-kpiTop"><span>TOTAL DES PANNES</span><span className="bl-kpiIcon bl-blue"><ClipboardList/></span></div><strong>{rows.length}</strong><small>Toutes les déclarations enregistrées</small></article>
+        <article className="bl-kpi"><div className="bl-kpiTop"><span>OUVERTES</span><span className="bl-kpiIcon bl-orange"><CircleAlert/></span></div><strong>{openCount}</strong><small>Interventions à traiter / en cours</small></article>
+        <article className="bl-kpi"><div className="bl-kpiTop"><span>CLÔTURÉES</span><span className="bl-kpiIcon bl-green"><CheckCircle2/></span></div><strong>{closedCount}</strong><small>Interventions terminées</small></article>
+        <article className="bl-kpi"><div className="bl-kpiTop"><span>CE MOIS-CI</span><span className="bl-kpiIcon bl-violet"><CalendarDays/></span></div><strong>{monthCount}</strong><small>Pannes déclarées ce mois</small></article>
+      </section>
+      <section className="bl-filters">
+        <div className="bl-search"><Search/><input placeholder="Rechercher WO, machine, problème..." value={query} onChange={e=>setQuery(e.target.value)}/></div>
+        <div className="bl-filter"><label>Unité</label><select value={unitFilter} onChange={e=>setUnitFilter(e.target.value)}><option value="">Toutes les unités</option>{units.map(v=><option key={v}>{v}</option>)}</select></div>
+        <div className="bl-filter"><label>Département</label><select value={departmentFilter} onChange={e=>setDepartmentFilter(e.target.value)}><option value="">Tous les départements</option>{departments.map(v=><option key={v}>{v}</option>)}</select></div>
+        <div className="bl-filter"><label>Area / Zone</label><select value={areaFilter} onChange={e=>setAreaFilter(e.target.value)}><option value="">Toutes les areas</option>{areas.map(v=><option key={v}>{v}</option>)}</select></div>
+        <div className="bl-filter"><label>Technicien</label><select value={technicianFilter} onChange={e=>setTechnicianFilter(e.target.value)}><option value="">Tous les techniciens</option>{technicians.map(v=><option key={v}>{v}</option>)}</select></div>
+        <div className="bl-filter"><label>Mois</label><input type="month" value={monthFilter} onChange={e=>setMonthFilter(e.target.value)}/></div><button className="bl-reset" onClick={reset}>Réinitialiser</button>
+      </section>
+      <div className="bl-count"><span><strong>{filtered.length}</strong> panne(s) affichée(s) sur {rows.length}</span><span>Filtres cumulables · Données inchangées</span></div>
+    </>}
+    {module!=="liste"&&<section className="toolbar"><div className="search"><Search/><input placeholder="Rechercher..." value={query} onChange={e=>setQuery(e.target.value)}/></div><button className="primary" onClick={()=>setEditing({})}><Plus/> Ajouter</button></section>}
+    <div className="tableWrap"><table><thead><tr>{defs.map(([key,label])=><th key={key}>{label}</th>)}<th/></tr></thead><tbody>{filtered.map(row=><tr key={row.id}>{defs.map(([key])=><td key={key}>{key==="actif"?(row[key]?"Oui":"Non"):key==="technicien"?<span className="bl-tech"><i>{String(row[key]||"—").slice(0,1).toUpperCase()}</i>{row[key]||"—"}</span>:key==="wo"?<span className="bl-wo">{row[key]??"—"}</span>:row[key]??"—"}</td>)}<td className="actions"><button onClick={()=>setEditing(row)}>Modifier</button>{module!=="liste"&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</td></tr>)}</tbody></table>{!filtered.length&&<div className="empty">Aucun résultat</div>}</div>
+    {editing&&<Editor fields={defs} values={editing} onClose={()=>setEditing(null)} onSave={save}/>}
   </div>;
 }
-
 function FailureEntry({ user }) {
   const empty = { wo: "", statut: "Open", service: "", technicien: "", unite: "", machine: "", area: "", probleme: "", commentaire: "", date_panne: "", date_debut: "", date_fin: "", downtime: "" };
   const [context, setContext] = useState({ units: [], machines: [], services: [], zones: [], technicians: [], technician: "", service: "" });
