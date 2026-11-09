@@ -253,3 +253,6 @@ input:focus, select:focus { border-color:#57c7ff; box-shadow:0 0 0 3px rgba(87,1
 .breakdownListMaster .bl-tech i{display:grid;place-items:center;width:23px;height:23px;border-radius:7px;background:#eaf3ff;color:#3576bd;font-size:9px;font-style:normal;font-weight:800}
 @media(max-width:900px){.breakdownListMaster .bl-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.breakdownListMaster .bl-filters{align-items:stretch}.breakdownListMaster .bl-search{flex-basis:100%}.breakdownListMaster .bl-filter{flex-basis:calc(50% - 8px);min-width:0}.breakdownListMaster .bl-count{flex-direction:column}}
+
+/* Breakdown table headers: match the blue Work Order identifiers */
+.breakdownListMaster th{color:#2869b5;font-weight:800;}
