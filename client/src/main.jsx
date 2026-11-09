@@ -272,7 +272,7 @@ function MachinePage({ user }) {
       <article className="mm-kpi"><div className="mm-kpiTop"><span className="mm-kpiIcon"><Layers/></span><span className="eyebrow">ORGANISATION</span></div><strong>{loading?"—":unitCount}</strong><span>Unités couvertes</span></article>
       <article className="mm-kpi"><div className="mm-kpiTop"><span className="mm-kpiIcon"><MapPin/></span><span className="eyebrow">LOCALISATION</span></div><strong>{loading?"—":areaCount}</strong><span>Areas / zones</span></article>
     </section>
-    <div className="mm-toolbar"><div className="mm-sectionTitle"><span className="eyebrow">EXPLORATEUR DU PARC</span><h2>Équipements</h2></div>{user.role==="admin"&&<button className="primary" onClick={()=>setEditing({})}><Plus/> Ajouter une machine</button>}</div>
+    <div className="mm-toolbar"><div className="mm-sectionTitle"><span className="eyebrow">EXPLORATEUR DU PARC</span><h2>Équipements</h2></div><button className="primary" onClick={()=>setEditing({})}><Plus/> Ajouter une machine</button></div>
     <section className="mm-filters">
       <div className="mm-field mm-search"><label>RECHERCHE RAPIDE</label><input placeholder="Tag, désignation, marque…" value={query} onChange={e=>setQuery(e.target.value)}/></div>
       <div className="mm-field"><label>UNITÉ</label><select value={unit} onChange={e=>{setUnit(e.target.value);setGroup("");setArea("");}}><option value="">Toutes les unités</option>{units.map(v=><option key={v}>{v}</option>)}</select></div>
@@ -287,7 +287,7 @@ function MachinePage({ user }) {
         <div className="mm-machineTop"><span className="mm-tag">{row.tag||"SANS TAG"}</span><span className={active(row.actif)?"mm-status":"mm-status off"}><i/>{active(row.actif)?"En service":"Inactive"}</span></div>
         <h4>{row.designation||"Machine sans désignation"}</h4><div className="mm-machineMeta"><span><Layers/>{row.unite||"Unité non définie"}</span><span><Boxes/>{row.groupe||"Sans groupe"}</span><span><MapPin/>{row.zone||"Zone non définie"}</span></div>
         {(row.marque||row.modele)&&<div className="mm-machineMeta"><span>{[row.marque,row.modele].filter(Boolean).join(" · ")}</span></div>}
-        {user.role==="admin"&&<div className="mm-machineFoot"><button onClick={()=>setEditing(row)}>Modifier</button><button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button></div>}
+        <div className="mm-machineFoot"><button onClick={()=>setEditing(row)}>Modifier</button><button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button></div>
       </article>)}</div>:<div className="mm-empty"><Wrench/>Aucune machine ne correspond à ces filtres.</div>}
     </article><aside className="mm-sidePanel"><h3>Répartition par unité</h3><p>Nombre d'équipements dans chaque unité</p>
       {byUnit.length?byUnit.map(item=><div className="mm-unitRow" key={item.name}><div className="mm-unitLabel"><span>{item.name}</span><strong>{item.count}</strong></div><div className="mm-track"><i style={{width:(item.count/maxUnit*100)+"%"}}/></div></div>):<div className="mm-empty">Aucune donnée</div>}
