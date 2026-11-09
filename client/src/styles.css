@@ -256,3 +256,6 @@ input:focus, select:focus { border-color:#57c7ff; box-shadow:0 0 0 3px rgba(87,1
 
 /* Breakdown table headers: match the blue Work Order identifiers */
 .breakdownListMaster th{color:#2869b5;font-weight:800;}
+
+/* Breakdown table: apply the Work Order identifier typography to every cell except Technician */
+.breakdownListMaster tbody td:not(.bl-technician-cell){color:#2869b5;font-family:Inter,"Segoe UI",Arial,sans-serif;font-weight:800;}
