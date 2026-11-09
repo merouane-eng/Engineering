@@ -1,11 +1,12 @@
 /* Service Worker — Engineering PWA
  * Versionné pour forcer le renouvellement des anciennes ressources.
  */
-const CACHE_NAME = "engineering-v2";
+const CACHE_NAME = "engineering-v3-logo";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
   "/manifest.json",
+  "/engineering-logo.svg",
   "/icons/icon-72x72.svg",
   "/icons/icon-96x96.svg",
   "/icons/icon-128x128.svg",
