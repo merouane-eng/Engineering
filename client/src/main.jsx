@@ -806,7 +806,7 @@ function App() {
   const logout = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch {} localStorage.removeItem("engineering_token"); localStorage.removeItem("engineering_user"); setUser(null); };
   if (!user) return <Login onLogin={login} language={language} setLanguage={setLanguage} />;
   const allowed = item => item === "parametres" ? user.role === "admin" : true;
-  const content = module === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : module === "stats" ? <Stats /> : module === "saisie" ? <FailureEntry user={user} /> : module === "pm" ? <PreventiveMaintenance user={user} /> : module === "operating" ? <OperatingTime user={user} /> : module === "effectif" ? <Effectif user={user} /> :
+  const content = module === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : module === "stats" ? <Stats /> : module === "machines" ? <MachinePage user={user} /> : module === "saisie" ? <FailureEntry user={user} /> : module === "pm" ? <PreventiveMaintenance user={user} /> : module === "operating" ? <OperatingTime user={user} /> : module === "effectif" ? <Effectif user={user} /> :
     module === "parametres" ? <AccessSettings user={user} /> : <DataPage key={module} module={module} user={user} />;
   return <div className="appShell">
     <LanguageSwitch language={language} setLanguage={setLanguage} className="appLanguage" />
