@@ -1,77 +1,219 @@
 import { useEffect, useState } from "react";
 
 const EN = {
-  "Accueil":"Home","Machines":"Machines","Effectif":"Staff"
-  "Liste des pannes":"Breakdown list","Maintenance préventive":"Preventive maintenance","Statistiques":"Statistics"
-  "Paramètres":"Settings","Gestion de maintenance industrielle":"Industrial maintenance management","Nom d'utilisateur":"Username"
-  "Se connecter":"Sign in","Déconnexion":"Sign out","Centre de pilotage":"Control center"
-  "Indicateurs clés":"Key indicators","Actualiser":"Refresh","Réessayer":"Try again"
-  "Bonjour":"Hello","Voici la situation de votre maintenance aujourd'hui.":"Here is your maintenance overview for today.","CENTRE DE PILOTAGE · ENGINEERING":"ENGINEERING · CONTROL CENTER"
-  "VUE GÉNÉRALE":"OVERVIEW","Machines en service":"Machines in service","Techniciens actifs":"Active technicians"
-  "PM à réaliser":"PM due","PM réalisées":"PM completed","Parc autorisé":"Authorized equipment"
-  "Effectif disponible":"Available staff","À traiter":"To be handled","Ce mois-ci":"This month"
-  "En retard ou ce mois":"Overdue or due this month","Base de données connectée":"Database connected","Connexion à vérifier":"Connection needs checking"
-  "SUIVI OPÉRATIONNEL":"OPERATIONAL MONITORING","Dernières pannes":"Latest breakdowns","Tout voir":"View all"
-  "Machine non précisée":"Unspecified machine","Intervention de maintenance":"Maintenance intervention","Aucune panne récente à afficher":"No recent breakdowns to display"
-  "Les nouvelles déclarations apparaîtront ici.":"New reports will appear here.","ANTICIPER LES ARRÊTS":"PREVENT DOWNTIME","Planning":"Schedule"
-  "Aucune PM à venir":"No upcoming PM","Le planning préventif est à jour.":"The preventive schedule is up to date.","ACCÈS RAPIDE":"QUICK ACCESS"
-  "Que souhaitez-vous faire ?":"What would you like to do?","Déclarer une panne":"Report a breakdown","Créer un nouvel ordre de travail":"Create a new work order"
-  "Consulter les machines":"Browse machines","Voir le parc et ses équipements":"View equipment and assets","Planifier une PM":"Schedule preventive maintenance"
-  "Organiser la maintenance préventive":"Organize preventive maintenance","Voir les statistiques":"View statistics","Analyser les indicateurs maintenance":"Analyze maintenance indicators"
-  "Données actualisées à la demande":"Data refreshed on demand","Performance & fiabilité":"Performance & reliability","Analyse opérationnelle":"Operational analysis"
-  "Période":"Period","Unité":"Unit","7 jours":"7 days"
-  "30 jours":"30 days","90 jours":"90 days","12 mois":"12 months"
-  "Tout":"All","Toutes les périodes":"All periods","12 derniers mois":"Last 12 months"
-  "Derniers":"Last","Chargement…":"Loading…","Synthèse de performance":"PERFORMANCE SUMMARY"
-  "TENDANCE":"TREND","Évolution des pannes":"Breakdown trend","Nombre de WO déclarés par mois · 6 derniers mois":"Work orders reported per month · last 6 months"
-  "ÉTAT DES INTERVENTIONS":"WORK ORDER STATUS","Répartition des pannes":"Breakdown distribution","Ouvertes vs clôturées":"Open vs closed"
-  "Ouvertes":"Open","Clôturées":"Closed","Taux de clôture":"Closure rate"
-  "ANALYSE ÉQUIPEMENT":"EQUIPMENT ANALYSIS","Machines les plus en panne":"Machines with most breakdowns","Top 6 sur la période sélectionnée":"Top 6 for selected period"
-  "Aucune panne sur cette sélection.":"No breakdowns for this selection.","Respect du planning PM":"PM schedule compliance","État des interventions préventives":"Preventive maintenance status"
-  "PM planifiées":"PM scheduled","Réalisées":"Completed","En retard":"Overdue"
-  "Taux de réalisation":"Completion rate","À suivre":"To follow","FIABILITÉ & DISPONIBILITÉ":"RELIABILITY & AVAILABILITY"
-  "Lecture des indicateurs":"Understanding the indicators","Rechercher...":"Search...","Ajouter":"Add"
-  "Modifier":"Edit","Supprimer":"Delete","Enregistrer":"Save"
-  "Annuler":"Cancel","Fermer":"Close","Oui":"Yes"
-  "Non":"No","Actif":"Active","Inactif":"Inactive"
-  "Statut":"Status","Date":"Date","Machine":"Machine"
-  "Désignation":"Description","Tag":"Tag","Groupe":"Group"
-  "Marque":"Brand","Modèle":"Model","Matricule":"Employee ID"
-  "Prénom":"First name","Service":"Department","Fonction":"Job title"
-  "Téléphone":"Phone","Email":"Email","Commentaire":"Comment"
-  "Commentaires":"Comments","Techniciens":"Technicians","Fréquence":"Frequency"
-  "Date panne":"Breakdown date","Problème":"Problem","Pièces consommées":"Parts used"
-  "WO":"WO","Marche":"Running","Arrêt":"Stopped"
-  "Heures":"Hours","Minutes":"Minutes","Unités":"Units"
-  "Réaliser":"Complete","Programmer une PM":"Schedule preventive maintenance","Réaliser la PM":"Complete preventive maintenance"
-  "Date début":"Start date","Date fin":"End date","Sélectionner":"Select"
-  "Sélectionner...":"Select...","Sélectionner…":"Select…","Aucune maintenance préventive":"No preventive maintenance"
-  "Ajouter Operating Time":"Add Operating Time","Saisie panne":"Breakdown report","Toutes les unités":"All units"
-  "Valider la réalisation":"Confirm completion","Impossible de charger les statistiques. Vérifiez la connexion puis réessayez.":"Unable to load statistics. Check your connection and try again.","Certaines données ne sont pas accessibles. Les indicateurs concernés peuvent être incomplets.":"Some data is unavailable. Related indicators may be incomplete."
-  "Chargement impossible":"Unable to load","Erreur serveur":"Server error","Aucun résultat":"No results"
-  "Déclaration d'une intervention":"Intervention report","Panne enregistrée avec succès.":"Breakdown saved successfully.","Impossible de charger les unités autorisées":"Unable to load authorized units"
-  "Identification":"Identification","N° WO":"WO No.","Date et heure de la panne":"Breakdown date and time"
-  "Zone":"Area","Zone de la machine ou saisir une zone":"Machine area or enter an area","Description":"Description"
-  "Intervention":"Intervention","Début":"Start","Fin":"End"
-  "Downtime (minutes)":"Downtime (minutes)","Pièces de rechange":"Spare parts","Ajouter une pièce de rechange":"Add a spare part"
-  "Pièce référencielle":"Reference part","Saisir ou choisir une pièce...":"Enter or select a part...","Quantité":"Quantity"
-  "Référence":"Reference","Référentiel de cette machine":"Machine parts reference","Sans référence":"No reference"
-  "Aucune pièce référentielle associée à cette machine pour le moment.":"No reference parts are linked to this machine yet.","Associer cette pièce au référentiel de la machine":"Link this part to the machine reference","Utiliser":"Use"
-  "Retirer":"Remove","Historique des pièces utilisées":"Used parts history","Sélectionnez une machine pour afficher son historique.":"Select a machine to view its history."
-  "Aucun historique de pièce pour cette machine.":"No parts history for this machine.","Enregistrer la panne":"Save breakdown","Nouvelle pièce de rechange":"New spare part"
-  "Ajouter la pièce":"Add part","Nom":"Name","Matricule, nom, service et fonction sont obligatoires.":"Employee ID, last name, department and job title are required."
-  "Nouvel élément":"New item","Paramètres & accès":"Settings & access","Gestion des rôles et comptes":"Manage roles and accounts"
-  "Utilisateur":"Username","Rôle":"Role","Mot de passe":"Password"
-  "Nouveau mot de passe (4 caractères minimum)":"New password (at least 4 characters)","Mot de passe mis à jour.":"Password updated.","Technicien":"Technician"
-  "Superviseur":"Supervisor","Administrateur":"Administrator","saisie(s)":"entry/entries"
-  "PM programmée(s)":"scheduled PM","Ajouter une PM":"Add PM","Date prévue":"Scheduled date"
-  "Tolérance (jours)":"Tolerance (days)","Responsable":"Responsible","Planifiée":"Scheduled"
-  "Aucune saisie Operating Time":"No Operating Time entries","Heures planifiées":"Planned hours","Heures marche":"Running hours"
-  "Heures arrêt":"Downtime hours","Operating Time enregistré":"Operating Time recorded","Temps d’arrêt panne":"Breakdown downtime"
-  "Disponibilité":"Availability","Total des pannes":"Total breakdowns","Pannes ouvertes":"Open breakdowns"
-  "Pannes clôturées":"Closed breakdowns","PM en retard":"Overdue PM","Modifier l'effectif":"Edit staff"
-  "Ajouter un technicien":"Add technician","Date de recrutement":"Hire date","Date de départ":"Departure date"
-  "Saisi par":"Entered by","Nom / Saisi par":"Name / Entered by","Sélectionner une machine pour afficher son historique.":"Select a machine to view its history."
+  "Accueil":"Home",
+  "Machines":"Machines",
+  "Effectif":"Staff",
+  "Liste des pannes":"Breakdown list",
+  "Maintenance préventive":"Preventive maintenance",
+  "Statistiques":"Statistics",
+  "Paramètres":"Settings",
+  "Gestion de maintenance industrielle":"Industrial maintenance management",
+  "Nom d'utilisateur":"Username",
+  "Se connecter":"Sign in",
+  "Déconnexion":"Sign out",
+  "Centre de pilotage":"Control center",
+  "Indicateurs clés":"Key indicators",
+  "Actualiser":"Refresh",
+  "Réessayer":"Try again",
+  "Bonjour":"Hello",
+  "Voici la situation de votre maintenance aujourd'hui.":"Here is your maintenance overview for today.",
+  "CENTRE DE PILOTAGE · ENGINEERING":"ENGINEERING · CONTROL CENTER",
+  "VUE GÉNÉRALE":"OVERVIEW",
+  "Machines en service":"Machines in service",
+  "Techniciens actifs":"Active technicians",
+  "PM à réaliser":"PM due",
+  "PM réalisées":"PM completed",
+  "Parc autorisé":"Authorized equipment",
+  "Effectif disponible":"Available staff",
+  "À traiter":"To be handled",
+  "Ce mois-ci":"This month",
+  "En retard ou ce mois":"Overdue or due this month",
+  "Base de données connectée":"Database connected",
+  "Connexion à vérifier":"Connection needs checking",
+  "SUIVI OPÉRATIONNEL":"OPERATIONAL MONITORING",
+  "Dernières pannes":"Latest breakdowns",
+  "Tout voir":"View all",
+  "Machine non précisée":"Unspecified machine",
+  "Intervention de maintenance":"Maintenance intervention",
+  "Aucune panne récente à afficher":"No recent breakdowns to display",
+  "Les nouvelles déclarations apparaîtront ici.":"New reports will appear here.",
+  "ANTICIPER LES ARRÊTS":"PREVENT DOWNTIME",
+  "Planning":"Schedule",
+  "Aucune PM à venir":"No upcoming PM",
+  "Le planning préventif est à jour.":"The preventive schedule is up to date.",
+  "ACCÈS RAPIDE":"QUICK ACCESS",
+  "Que souhaitez-vous faire ?":"What would you like to do?",
+  "Déclarer une panne":"Report a breakdown",
+  "Créer un nouvel ordre de travail":"Create a new work order",
+  "Consulter les machines":"Browse machines",
+  "Voir le parc et ses équipements":"View equipment and assets",
+  "Planifier une PM":"Schedule preventive maintenance",
+  "Organiser la maintenance préventive":"Organize preventive maintenance",
+  "Voir les statistiques":"View statistics",
+  "Analyser les indicateurs maintenance":"Analyze maintenance indicators",
+  "Données actualisées à la demande":"Data refreshed on demand",
+  "Performance & fiabilité":"Performance & reliability",
+  "Analyse opérationnelle":"Operational analysis",
+  "Période":"Period",
+  "Unité":"Unit",
+  "7 jours":"7 days",
+  "30 jours":"30 days",
+  "90 jours":"90 days",
+  "12 mois":"12 months",
+  "Tout":"All",
+  "Toutes les périodes":"All periods",
+  "12 derniers mois":"Last 12 months",
+  "Derniers":"Last",
+  "Chargement…":"Loading…",
+  "Synthèse de performance":"PERFORMANCE SUMMARY",
+  "TENDANCE":"TREND",
+  "Évolution des pannes":"Breakdown trend",
+  "Nombre de WO déclarés par mois · 6 derniers mois":"Work orders reported per month · last 6 months",
+  "ÉTAT DES INTERVENTIONS":"WORK ORDER STATUS",
+  "Répartition des pannes":"Breakdown distribution",
+  "Ouvertes vs clôturées":"Open vs closed",
+  "Ouvertes":"Open",
+  "Clôturées":"Closed",
+  "Taux de clôture":"Closure rate",
+  "ANALYSE ÉQUIPEMENT":"EQUIPMENT ANALYSIS",
+  "Machines les plus en panne":"Machines with most breakdowns",
+  "Top 6 sur la période sélectionnée":"Top 6 for selected period",
+  "Aucune panne sur cette sélection.":"No breakdowns for this selection.",
+  "Respect du planning PM":"PM schedule compliance",
+  "État des interventions préventives":"Preventive maintenance status",
+  "PM planifiées":"PM scheduled",
+  "Réalisées":"Completed",
+  "En retard":"Overdue",
+  "Taux de réalisation":"Completion rate",
+  "À suivre":"To follow",
+  "FIABILITÉ & DISPONIBILITÉ":"RELIABILITY & AVAILABILITY",
+  "Lecture des indicateurs":"Understanding the indicators",
+  "Rechercher...":"Search...",
+  "Ajouter":"Add",
+  "Modifier":"Edit",
+  "Supprimer":"Delete",
+  "Enregistrer":"Save",
+  "Annuler":"Cancel",
+  "Fermer":"Close",
+  "Oui":"Yes",
+  "Non":"No",
+  "Actif":"Active",
+  "Inactif":"Inactive",
+  "Statut":"Status",
+  "Date":"Date",
+  "Machine":"Machine",
+  "Désignation":"Description",
+  "Tag":"Tag",
+  "Groupe":"Group",
+  "Marque":"Brand",
+  "Modèle":"Model",
+  "Matricule":"Employee ID",
+  "Prénom":"First name",
+  "Service":"Department",
+  "Fonction":"Job title",
+  "Téléphone":"Phone",
+  "Email":"Email",
+  "Commentaire":"Comment",
+  "Commentaires":"Comments",
+  "Techniciens":"Technicians",
+  "Fréquence":"Frequency",
+  "Date panne":"Breakdown date",
+  "Problème":"Problem",
+  "Pièces consommées":"Parts used",
+  "WO":"WO",
+  "Marche":"Running",
+  "Arrêt":"Stopped",
+  "Heures":"Hours",
+  "Minutes":"Minutes",
+  "Unités":"Units",
+  "Réaliser":"Complete",
+  "Programmer une PM":"Schedule preventive maintenance",
+  "Réaliser la PM":"Complete preventive maintenance",
+  "Date début":"Start date",
+  "Date fin":"End date",
+  "Sélectionner":"Select",
+  "Sélectionner...":"Select...",
+  "Sélectionner…":"Select…",
+  "Aucune maintenance préventive":"No preventive maintenance",
+  "Ajouter Operating Time":"Add Operating Time",
+  "Saisie panne":"Breakdown report",
+  "Toutes les unités":"All units",
+  "Valider la réalisation":"Confirm completion",
+  "Impossible de charger les statistiques. Vérifiez la connexion puis réessayez.":"Unable to load statistics. Check your connection and try again.",
+  "Certaines données ne sont pas accessibles. Les indicateurs concernés peuvent être incomplets.":"Some data is unavailable. Related indicators may be incomplete.",
+  "Chargement impossible":"Unable to load",
+  "Erreur serveur":"Server error",
+  "Aucun résultat":"No results",
+  "Déclaration d'une intervention":"Intervention report",
+  "Panne enregistrée avec succès.":"Breakdown saved successfully.",
+  "Impossible de charger les unités autorisées":"Unable to load authorized units",
+  "Identification":"Identification",
+  "N° WO":"WO No.",
+  "Date et heure de la panne":"Breakdown date and time",
+  "Zone":"Area",
+  "Zone de la machine ou saisir une zone":"Machine area or enter an area",
+  "Description":"Description",
+  "Intervention":"Intervention",
+  "Début":"Start",
+  "Fin":"End",
+  "Downtime (minutes)":"Downtime (minutes)",
+  "Pièces de rechange":"Spare parts",
+  "Ajouter une pièce de rechange":"Add a spare part",
+  "Pièce référencielle":"Reference part",
+  "Saisir ou choisir une pièce...":"Enter or select a part...",
+  "Quantité":"Quantity",
+  "Référence":"Reference",
+  "Référentiel de cette machine":"Machine parts reference",
+  "Sans référence":"No reference",
+  "Aucune pièce référentielle associée à cette machine pour le moment.":"No reference parts are linked to this machine yet.",
+  "Associer cette pièce au référentiel de la machine":"Link this part to the machine reference",
+  "Utiliser":"Use",
+  "Retirer":"Remove",
+  "Historique des pièces utilisées":"Used parts history",
+  "Sélectionnez une machine pour afficher son historique.":"Select a machine to view its history.",
+  "Aucun historique de pièce pour cette machine.":"No parts history for this machine.",
+  "Enregistrer la panne":"Save breakdown",
+  "Nouvelle pièce de rechange":"New spare part",
+  "Ajouter la pièce":"Add part",
+  "Nom":"Name",
+  "Matricule, nom, service et fonction sont obligatoires.":"Employee ID, last name, department and job title are required.",
+  "Nouvel élément":"New item",
+  "Paramètres & accès":"Settings & access",
+  "Gestion des rôles et comptes":"Manage roles and accounts",
+  "Utilisateur":"Username",
+  "Rôle":"Role",
+  "Mot de passe":"Password",
+  "Nouveau mot de passe (4 caractères minimum)":"New password (at least 4 characters)",
+  "Mot de passe mis à jour.":"Password updated.",
+  "Technicien":"Technician",
+  "Superviseur":"Supervisor",
+  "Administrateur":"Administrator",
+  "saisie(s)":"entry/entries",
+  "PM programmée(s)":"scheduled PM",
+  "Ajouter une PM":"Add PM",
+  "Date prévue":"Scheduled date",
+  "Tolérance (jours)":"Tolerance (days)",
+  "Responsable":"Responsible",
+  "Planifiée":"Scheduled",
+  "Aucune saisie Operating Time":"No Operating Time entries",
+  "Heures planifiées":"Planned hours",
+  "Heures marche":"Running hours",
+  "Heures arrêt":"Downtime hours",
+  "Operating Time enregistré":"Operating Time recorded",
+  "Temps d’arrêt panne":"Breakdown downtime",
+  "Disponibilité":"Availability",
+  "Total des pannes":"Total breakdowns",
+  "Pannes ouvertes":"Open breakdowns",
+  "Pannes clôturées":"Closed breakdowns",
+  "PM en retard":"Overdue PM",
+  "Modifier l'effectif":"Edit staff",
+  "Ajouter un technicien":"Add technician",
+  "Date de recrutement":"Hire date",
+  "Date de départ":"Departure date",
+  "Saisi par":"Entered by",
+  "Nom / Saisi par":"Name / Entered by",
+  "Sélectionner une machine pour afficher son historique.":"Select a machine to view its history."
 };
 
 const ATTRS = ["placeholder", "title", "aria-label"];
