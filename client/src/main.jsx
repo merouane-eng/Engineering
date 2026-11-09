@@ -5,7 +5,7 @@ import {
   Activity, CalendarClock, Gauge, LayoutDashboard, LogOut, Menu,
   Settings, Siren, Users, Wrench, ClipboardPlus, ClipboardList, Search, Plus, Save, X,
   ArrowUpRight, CalendarDays, CheckCircle2, CircleAlert, Clock3, PlusCircle, ClipboardCheck,
-  Filter, TrendingUp, BarChart3, PieChart,
+  Filter, TrendingUp, BarChart3, PieChart,, Layers, MapPin, Boxes, RotateCcw
 } from "lucide-react";
 import "./styles.css";
 import { useLanguage, LanguageSwitch } from "./i18n.jsx";
@@ -239,17 +239,75 @@ function PageTitle({ title, subtitle }) {
   return <header className="pageTitle"><div><span className="eyebrow">ENGINEERING</span><h2>{title}</h2><p>{subtitle}</p></div></header>;
 }
 
+function MachinePage({ user }) {
+  const [rows,setRows]=useState([]),[query,setQuery]=useState(""),[unit,setUnit]=useState(""),[group,setGroup]=useState(""),[area,setArea]=useState(""),[editing,setEditing]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState("");
+  const defs=fieldsByModule.machines;
+  const load=async()=>{setLoading(true);setError("");try{const data=await api("/api/modules/machines");setRows(Array.isArray(data)?data:[]);}catch(e){setError(e.message||"Chargement impossible");}finally{setLoading(false);}};
+  useEffect(()=>{load();},[]);
+  const unique=values=>[...new Set(values.map(v=>String(v||"").trim()).filter(Boolean))].sort((x,y)=>x.localeCompare(y,"fr"));
+  const units=unique(rows.map(r=>r.unite));
+  const groups=unique(rows.filter(r=>!unit||r.unite===unit).map(r=>r.groupe));
+  const areas=unique(rows.filter(r=>(!unit||r.unite===unit)&&(!group||r.groupe===group)).map(r=>r.zone));
+  const active=v=>v===true||v===1||v==="1"||String(v).toLowerCase()==="true";
+  const filtered=rows.filter(r=>[r.tag,r.designation,r.unite,r.groupe,r.zone,r.marque,r.modele].join(" ").toLowerCase().includes(query.toLowerCase())&&(!unit||r.unite===unit)&&(!group||r.groupe===group)&&(!area||r.zone===area));
+  const activeCount=rows.filter(r=>active(r.actif)).length, inactiveCount=rows.length-activeCount;
+  const unitCount=units.length, groupCount=unique(rows.map(r=>r.groupe)).length, areaCount=unique(rows.map(r=>r.zone)).length;
+  const byUnit=units.map(name=>({name,count:rows.filter(r=>r.unite===name).length})).sort((x,y)=>y.count-x.count), maxUnit=Math.max(1,...byUnit.map(x=>x.count));
+  const save=async values=>{await api(editing?.id?"/api/tables/machines/"+editing.id:"/api/tables/machines",{method:editing?.id?"PUT":"POST",body:JSON.stringify(values)});setEditing(null);load();};
+  const remove=async id=>{if(!window.confirm("Supprimer cette machine ?"))return;try{await api("/api/tables/machines/"+id,{method:"DELETE"});load();}catch(e){setError(e.message);}};
+  const reset=()=>{setUnit("");setGroup("");setArea("");setQuery("");};
+  return <div className="machineMaster">
+    <style>{\`
+      .machineMaster{color:#1b3150;padding-bottom:28px}.machineMaster .mm-hero{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:27px 30px;margin:4px 0 19px;border-radius:20px;color:#fff;background:linear-gradient(115deg,#102b54,#174b87 62%,#2874bd);box-shadow:0 12px 30px #163b681f}.machineMaster .mm-eyebrow{font-size:10px;font-weight:800;letter-spacing:1.6px;color:#b9d7ff}.machineMaster .mm-hero h1{font-size:26px;margin:9px 0 6px;color:#fff}.machineMaster .mm-hero p{margin:0;color:#d7e7fb;font-size:13px}.machineMaster .mm-heroIcon{width:62px;height:62px;display:grid;place-items:center;border:1px solid #ffffff38;border-radius:18px;background:#ffffff18}.machineMaster .mm-heroIcon svg{width:30px;height:30px}
+      .machineMaster .mm-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}.machineMaster .mm-kpi{padding:15px 17px;border:1px solid #e7edf5;border-radius:15px;background:#fff;box-shadow:0 5px 18px #183b6408;min-width:0}.machineMaster .mm-kpiTop{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.machineMaster .mm-kpiIcon{width:35px;height:35px;display:grid;place-items:center;border-radius:11px;background:#edf4ff;color:#2866c5}.machineMaster .mm-kpiIcon svg{width:18px;height:18px}.machineMaster .mm-kpi:nth-child(2) .mm-kpiIcon{background:#eaf8f0;color:#15945b}.machineMaster .mm-kpi:nth-child(3) .mm-kpiIcon{background:#f2edff;color:#7654c7}.machineMaster .mm-kpi:nth-child(4) .mm-kpiIcon{background:#fff4e8;color:#d47a22}.machineMaster .mm-kpi strong{display:block;font-size:27px;color:#1c3558;font-weight:850}.machineMaster .mm-kpi span:last-child{display:block;margin-top:5px;color:#7c8ba0;font-size:11px;font-weight:650}
+      .machineMaster .mm-toolbar{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:13px}.machineMaster .mm-sectionTitle h2{margin:3px 0 0;font-size:17px;color:#203958}.machineMaster .mm-filters{display:grid;grid-template-columns:minmax(190px,1.5fr) repeat(3,minmax(130px,1fr)) auto;gap:9px;padding:13px;margin-bottom:16px;border:1px solid #e6edf5;border-radius:14px;background:#fff}.machineMaster .mm-field{display:flex;flex-direction:column;gap:6px;min-width:0}.machineMaster .mm-field label{font-size:10px;font-weight:800;color:#687b94}.machineMaster .mm-field input,.machineMaster .mm-field select{box-sizing:border-box;width:100%;height:39px;min-width:0;border:1px solid #dfe7f0;border-radius:9px;background:#fbfcfe;color:#29415f;padding:0 10px;font:inherit;font-size:11px;outline:none}.machineMaster .mm-reset{height:39px;display:flex;align-items:center;gap:6px;padding:0 11px;border:1px solid #dfe7f0;border-radius:9px;background:#f7f9fc;color:#60748e;font-size:10px;font-weight:750;cursor:pointer;white-space:nowrap}.machineMaster .mm-reset svg{width:14px;height:14px}
+      .machineMaster .mm-content{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:14px;align-items:start}.machineMaster .mm-listPanel,.machineMaster .mm-sidePanel{border:1px solid #e6edf5;border-radius:15px;background:#fff;box-shadow:0 5px 18px #183b6408;min-width:0}.machineMaster .mm-listHead{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:15px 17px;border-bottom:1px solid #edf1f6}.machineMaster .mm-listHead h3{margin:0;font-size:13px;color:#29415f}.machineMaster .mm-listHead span{font-size:10px;color:#8291a5}.machineMaster .mm-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:13px}.machineMaster .mm-machine{padding:13px;border:1px solid #e9eef5;border-radius:12px;background:linear-gradient(145deg,#fff,#fbfcff);min-width:0}.machineMaster .mm-machineTop{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.machineMaster .mm-tag{display:inline-flex;padding:5px 8px;border-radius:7px;background:#edf4ff;color:#245da9;font-size:10px;font-weight:850}.machineMaster .mm-status{display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:750;color:#15945b}.machineMaster .mm-status.off{color:#9a6b39}.machineMaster .mm-status i{width:6px;height:6px;border-radius:50%;background:currentColor}.machineMaster .mm-machine h4{margin:10px 0 4px;font-size:13px;color:#213a5a;line-height:1.35;overflow-wrap:anywhere}.machineMaster .mm-machineMeta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.machineMaster .mm-machineMeta span{display:inline-flex;align-items:center;gap:5px;padding:6px 7px;border-radius:7px;background:#f3f6fa;color:#647790;font-size:9px;font-weight:650}.machineMaster .mm-machineMeta svg{width:12px;height:12px}.machineMaster .mm-machineFoot{display:flex;justify-content:flex-end;gap:6px;margin-top:11px;padding-top:9px;border-top:1px solid #edf1f6}.machineMaster .mm-machineFoot button{padding:6px 8px;border:1px solid #e2e9f1;border-radius:7px;background:#fff;color:#47617f;font-size:9px;font-weight:750;cursor:pointer}.machineMaster .mm-machineFoot button.dangerText{color:#bd4c4c}
+      .machineMaster .mm-sidePanel{padding:15px}.machineMaster .mm-sidePanel h3{margin:0 0 4px;font-size:12px;color:#29415f}.machineMaster .mm-sidePanel>p{margin:0 0 15px;font-size:9px;color:#8a98aa}.machineMaster .mm-unitRow{margin:12px 0}.machineMaster .mm-unitLabel{display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;font-size:10px;color:#5c718b}.machineMaster .mm-unitLabel strong{color:#29415f}.machineMaster .mm-track{height:6px;overflow:hidden;border-radius:9px;background:#edf1f6}.machineMaster .mm-track i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#3478d4,#63a3ed)}.machineMaster .mm-sideStats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px;padding-top:13px;border-top:1px solid #edf1f6}.machineMaster .mm-sideStats div{padding:9px;border-radius:9px;background:#f7f9fc}.machineMaster .mm-sideStats strong{display:block;font-size:18px;color:#27466c}.machineMaster .mm-sideStats span{font-size:9px;color:#8391a4}.machineMaster .mm-empty{padding:35px 15px;text-align:center;color:#8291a5;font-size:11px}.machineMaster .mm-empty svg{display:block;width:25px;height:25px;margin:0 auto 9px;color:#9aabc0}.machineMaster .mm-notice{margin-bottom:12px;padding:10px 12px;border:1px solid #f2d7d7;border-radius:9px;background:#fff7f7;color:#a34242;font-size:11px}
+      @media(max-width:1100px){.machineMaster .mm-content{grid-template-columns:1fr}.machineMaster .mm-sidePanel{display:none}}@media(max-width:850px){.machineMaster .mm-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.machineMaster .mm-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.machineMaster .mm-search{grid-column:1/-1}}@media(max-width:600px){.machineMaster .mm-hero{padding:21px 17px}.machineMaster .mm-hero h1{font-size:21px}.machineMaster .mm-grid{grid-template-columns:1fr}.machineMaster .mm-filters{grid-template-columns:1fr}.machineMaster .mm-search{grid-column:auto}.machineMaster .mm-toolbar{align-items:stretch;flex-direction:column}}
+    \`}</style>
+    <section className="mm-hero"><div><span className="mm-eyebrow">ENGINEERING · ASSET MANAGEMENT</span><h1>Parc machines</h1><p>Explorez vos équipements, filtrez par unité, groupe et zone, et suivez votre parc en un coup d'œil.</p></div><div className="mm-heroIcon"><Wrench/></div></section>
+    <section className="mm-kpis">
+      <article className="mm-kpi"><div className="mm-kpiTop"><span className="mm-kpiIcon"><Wrench/></span><span className="eyebrow">PARC TOTAL</span></div><strong>{loading?"—":rows.length}</strong><span>Machines référencées</span></article>
+      <article className="mm-kpi"><div className="mm-kpiTop"><span className="mm-kpiIcon"><Activity/></span><span className="eyebrow">EN SERVICE</span></div><strong>{loading?"—":activeCount}</strong><span>Machines actives</span></article>
+      <article className="mm-kpi"><div className="mm-kpiTop"><span className="mm-kpiIcon"><Layers/></span><span className="eyebrow">ORGANISATION</span></div><strong>{loading?"—":unitCount}</strong><span>Unités couvertes</span></article>
+      <article className="mm-kpi"><div className="mm-kpiTop"><span className="mm-kpiIcon"><MapPin/></span><span className="eyebrow">LOCALISATION</span></div><strong>{loading?"—":areaCount}</strong><span>Areas / zones</span></article>
+    </section>
+    <div className="mm-toolbar"><div className="mm-sectionTitle"><span className="eyebrow">EXPLORATEUR DU PARC</span><h2>Équipements</h2></div>{user.role==="admin"&&<button className="primary" onClick={()=>setEditing({})}><Plus/> Ajouter une machine</button>}</div>
+    <section className="mm-filters">
+      <div className="mm-field mm-search"><label>RECHERCHE RAPIDE</label><input placeholder="Tag, désignation, marque…" value={query} onChange={e=>setQuery(e.target.value)}/></div>
+      <div className="mm-field"><label>UNITÉ</label><select value={unit} onChange={e=>{setUnit(e.target.value);setGroup("");setArea("");}}><option value="">Toutes les unités</option>{units.map(v=><option key={v}>{v}</option>)}</select></div>
+      <div className="mm-field"><label>GROUPE</label><select value={group} onChange={e=>{setGroup(e.target.value);setArea("");}}><option value="">Tous les groupes</option>{groups.map(v=><option key={v}>{v}</option>)}</select></div>
+      <div className="mm-field"><label>AREA / ZONE</label><select value={area} onChange={e=>setArea(e.target.value)}><option value="">Toutes les zones</option>{areas.map(v=><option key={v}>{v}</option>)}</select></div>
+      <button className="mm-reset" onClick={reset}><RotateCcw/> Effacer</button>
+    </section>
+    {error&&<div className="mm-notice">{error}</div>}
+    <section className="mm-content"><article className="mm-listPanel">
+      <div className="mm-listHead"><h3>Liste des équipements</h3><span>{filtered.length} / {rows.length} machine(s)</span></div>
+      {loading?<div className="mm-empty">Chargement du parc machines…</div>:filtered.length?<div className="mm-grid">{filtered.map(row=><article className="mm-machine" key={row.id||row.tag}>
+        <div className="mm-machineTop"><span className="mm-tag">{row.tag||"SANS TAG"}</span><span className={active(row.actif)?"mm-status":"mm-status off"}><i/>{active(row.actif)?"En service":"Inactive"}</span></div>
+        <h4>{row.designation||"Machine sans désignation"}</h4><div className="mm-machineMeta"><span><Layers/>{row.unite||"Unité non définie"}</span><span><Boxes/>{row.groupe||"Sans groupe"}</span><span><MapPin/>{row.zone||"Zone non définie"}</span></div>
+        {(row.marque||row.modele)&&<div className="mm-machineMeta"><span>{[row.marque,row.modele].filter(Boolean).join(" · ")}</span></div>}
+        {user.role==="admin"&&<div className="mm-machineFoot"><button onClick={()=>setEditing(row)}>Modifier</button><button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button></div>}
+      </article>)}</div>:<div className="mm-empty"><Wrench/>Aucune machine ne correspond à ces filtres.</div>}
+    </article><aside className="mm-sidePanel"><h3>Répartition par unité</h3><p>Nombre d'équipements dans chaque unité</p>
+      {byUnit.length?byUnit.map(item=><div className="mm-unitRow" key={item.name}><div className="mm-unitLabel"><span>{item.name}</span><strong>{item.count}</strong></div><div className="mm-track"><i style={{width:(item.count/maxUnit*100)+"%"}}/></div></div>):<div className="mm-empty">Aucune donnée</div>}
+      <div className="mm-sideStats"><div><strong>{groupCount}</strong><span>Groupes</span></div><div><strong>{inactiveCount}</strong><span>Inactives</span></div></div>
+    </aside></section>
+    {editing&&<Editor fields={defs} values={editing} onClose={()=>setEditing(null)} onSave={save}/>}
+  </div>;
+}
+
 function DataPage({ module, user }) {
   const defs = fieldsByModule[module];
   const [rows, setRows] = useState([]);
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState(null);
-  const load = () => api(`/api/modules/${module}`).then(setRows);
+  const load = () => api(\`/api/modules/\${module}\`).then(setRows);
   useEffect(() => { load().catch(() => setRows([])); }, [module]);
   const filtered = rows.filter(row => JSON.stringify(row).toLowerCase().includes(query.toLowerCase()));
   const save = async values => {
     const table = tables[module];
-    await api(editing?.id ? `/api/tables/${table}/${editing.id}` : `/api/tables/${table}`, {
+    await api(editing?.id ? \`/api/tables/\${table}/\${editing.id}\` : \`/api/tables/\${table}\`, {
       method: editing?.id ? "PUT" : "POST", body: JSON.stringify(values)
     });
     setEditing(null);
@@ -257,12 +315,12 @@ function DataPage({ module, user }) {
   };
   const remove = async id => {
     if (!window.confirm("Supprimer cet élément ?")) return;
-    await api(`/api/tables/${tables[module]}/${id}`, { method: "DELETE" });
+    await api(\`/api/tables/\${tables[module]}/\${id}\`, { method: "DELETE" });
     load();
   };
   const title = modules.find(item => item[0] === module)?.[1] || module;
   return <div>
-    <PageTitle title={title} subtitle={`${rows.length} enregistrement(s)`} />
+    <PageTitle title={title} subtitle={\`\${rows.length} enregistrement(s)\`} />
     <section className="toolbar">
       <div className="search"><Search /><input placeholder="Rechercher..." value={query} onChange={e => setQuery(e.target.value)} /></div>
       {module !== "liste" && <button className="primary" onClick={() => setEditing({})}><Plus /> Ajouter</button>}
