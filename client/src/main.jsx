@@ -618,6 +618,9 @@ function PreventiveMaintenance({ user }) {
   const [rows, setRows] = useState([]);
   const [context, setContext] = useState({ units: [], machines: [], technicians: [], technician: "", frequencies: [] });
   const [query, setQuery] = useState("");
+  const [filterUnit, setFilterUnit] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterMonth, setFilterMonth] = useState("");
   const [form, setForm] = useState(null);
   const [realization, setRealization] = useState(null);
   const [error, setError] = useState("");
@@ -633,7 +636,13 @@ function PreventiveMaintenance({ user }) {
   }, []);
 
   const filteredMachines = context.machines.filter(machine => !form?.unite || machine.unite === form.unite);
-  const filtered = rows.filter(row => JSON.stringify(row).toLowerCase().includes(query.toLowerCase()));
+  const units = [...new Set([...(context.units || []), ...rows.map(r => r.unite)].filter(Boolean))].sort((a,b) => a.localeCompare(b,"fr"));
+  const done = r => ["réalisée","realisee","réalisé","realise","done","completed"].includes(String(r.statut || "").trim().toLowerCase());
+  const filtered = rows.filter(r => JSON.stringify(r).toLowerCase().includes(query.toLowerCase()) && (!filterUnit || r.unite === filterUnit) && (!filterMonth || String(r.date_prevue || "").slice(0,7) === filterMonth) && (!filterStatus || (filterStatus === "done" ? done(r) : !done(r))));
+  const realizedCount = filtered.filter(done).length;
+  const plannedCount = filtered.length - realizedCount;
+  const completion = filtered.length ? Math.round(realizedCount / filtered.length * 100) : 0;
+  const resetFilters = () => {setQuery("");setFilterUnit("");setFilterStatus("");setFilterMonth("");};
   const canPlan = user.role === "admin" || user.role === "superviseur";
 
   const openForm = () => setForm({
@@ -676,13 +685,24 @@ function PreventiveMaintenance({ user }) {
     } catch (err) { setError(err.message); }
   };
 
-  return <div>
-    <PageTitle title="Maintenance préventive" subtitle={`${rows.length} PM programmée(s)`} />
+  return <div className="breakdownListMaster operationsMaster">
+    <PageTitle title="Maintenance préventive" subtitle={filtered.length + " / " + rows.length + " PM affichée(s)"} />
     {error && <div className="formError">{error}</div>}
-    <section className="toolbar">
-      <div className="search"><Search /><input placeholder="Rechercher..." value={query} onChange={e => setQuery(e.target.value)} /></div>
-      {canPlan && <button className="primary" onClick={openForm}><Plus /> Ajouter une PM</button>}
+    <section className="bl-kpis">
+      <article className="bl-kpi"><div className="bl-kpiTop"><span>TOTAL PM</span><span className="bl-kpiIcon bl-blue"><CalendarClock /></span></div><strong>{filtered.length}</strong><small>Maintenances filtrées</small></article>
+      <article className="bl-kpi"><div className="bl-kpiTop"><span>PLANIFIÉES</span><span className="bl-kpiIcon bl-orange"><Clock3 /></span></div><strong>{plannedCount}</strong><small>PM restant à réaliser</small></article>
+      <article className="bl-kpi"><div className="bl-kpiTop"><span>RÉALISÉES</span><span className="bl-kpiIcon bl-green"><CheckCircle2 /></span></div><strong>{realizedCount}</strong><small>PM terminées</small></article>
+      <article className="bl-kpi"><div className="bl-kpiTop"><span>TAUX DE RÉALISATION</span><span className="bl-kpiIcon bl-violet"><TrendingUp /></span></div><strong>{completion} %</strong><small>{realizedCount} réalisées sur {filtered.length}</small></article>
     </section>
+    <section className="bl-filters">
+      <div className="bl-search"><Search /><input aria-label="Rechercher une PM" placeholder="Rechercher machine, responsable..." value={query} onChange={e => setQuery(e.target.value)} /></div>
+      <div className="bl-filter"><label>Unité</label><select value={filterUnit} onChange={e => setFilterUnit(e.target.value)}><option value="">Toutes les unités</option>{units.map(u => <option key={u} value={u}>{u}</option>)}</select></div>
+      <div className="bl-filter"><label>Statut</label><select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="">Tous les statuts</option><option value="planned">Planifiées</option><option value="done">Réalisées</option></select></div>
+      <div className="bl-filter"><label>Mois prévu</label><input aria-label="Filtrer par mois prévu" type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} /></div>
+      <button className="bl-reset" onClick={resetFilters}><RotateCcw /> Réinitialiser</button>
+    </section>
+    <div className="bl-count"><span><strong>{filtered.length}</strong> PM sur {rows.length}</span><span>Cartes et liste synchronisées avec les filtres</span></div>
+    <div className="operationsActions">{canPlan && <button className="primary" onClick={openForm}><Plus /> Ajouter une PM</button>}</div>
     <div className="tableWrap">
       <table>
         <thead><tr><th>Date prévue</th><th>Unité</th><th>Machine</th><th>Fréquence</th><th>Responsable</th><th>Statut</th><th /></tr></thead>
@@ -733,6 +753,9 @@ function OperatingTime({ user }) {
   const [rows, setRows] = useState([]);
   const [context, setContext] = useState({ units: [], machines: [], operator: "" });
   const [query, setQuery] = useState("");
+  const [filterUnit, setFilterUnit] = useState("");
+  const [filterMachine, setFilterMachine] = useState("");
+  const [filterMonth, setFilterMonth] = useState("");
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState({ unite: "", machine: "", date_jour: "", hours: 0, minutes: 0, commentaire: "" });
   const [error, setError] = useState("");
@@ -746,7 +769,16 @@ function OperatingTime({ user }) {
     }).catch(() => setContext({ units: [], machines: [], operator: "" }));
   }, []);
 
-  const filtered = rows.filter(row => JSON.stringify(row).toLowerCase().includes(query.toLowerCase()));
+  const machineUnits = new Map(context.machines.map(m => [m.tag, m.unite]));
+  const units = [...new Set([...context.units, ...context.machines.map(m=>m.unite)].filter(Boolean))].sort((a,b)=>a.localeCompare(b,"fr"));
+  const machines = [...new Set([...rows.map(r=>r.machine), ...context.machines.map(m=>m.tag)].filter(tag=>tag && (!filterUnit || machineUnits.get(tag)===filterUnit)))].sort((a,b)=>a.localeCompare(b,"fr"));
+  const filtered = rows.filter(r => JSON.stringify(r).toLowerCase().includes(query.toLowerCase()) && (!filterUnit || machineUnits.get(r.machine)===filterUnit) && (!filterMachine || r.machine===filterMachine) && (!filterMonth || String(r.date_jour || "").slice(0,7)===filterMonth));
+  const running = filtered.reduce((sum,r)=>sum+(Number(r.heures_marche)||0),0);
+  const stopped = filtered.reduce((sum,r)=>sum+(Number(r.heures_arret)||0),0);
+  const planned = filtered.reduce((sum,r)=>sum+(Number(r.heures_planifiees)||0),0);
+  const availability = planned ? Math.round(running / planned * 1000) / 10 : 0;
+  const hours = n => n.toLocaleString("fr-FR",{maximumFractionDigits:1})+" h";
+  const resetFilters = () => {setQuery("");setFilterUnit("");setFilterMachine("");setFilterMonth("");};
   const unitMachines = context.machines.filter(machine => !draft.unite || machine.unite === draft.unite);
   const save = async event => {
     event.preventEvent?.();
@@ -778,13 +810,24 @@ function OperatingTime({ user }) {
     setEditing(true);
   };
 
-  return <div>
-    <PageTitle title="Operating Time" subtitle={`${rows.length} saisie(s)`} />
+  return <div className="breakdownListMaster operationsMaster">
+    <PageTitle title="Operating Time" subtitle={filtered.length + " / " + rows.length + " saisie(s)"} />
     {error && <div className="formError">{error}</div>}
-    <section className="toolbar">
-      <div className="search"><Search /><input placeholder="Rechercher..." value={query} onChange={e => setQuery(e.target.value)} /></div>
-      <button className="primary" onClick={openEditor}><Plus /> Ajouter</button>
+    <section className="bl-kpis">
+      <article className="bl-kpi"><div className="bl-kpiTop"><span>SAISIES</span><span className="bl-kpiIcon bl-blue"><ClipboardList /></span></div><strong>{filtered.length}</strong><small>Enregistrements sélectionnés</small></article>
+      <article className="bl-kpi"><div className="bl-kpiTop"><span>HEURES DE MARCHE</span><span className="bl-kpiIcon bl-green"><Gauge /></span></div><strong>{hours(running)}</strong><small>Temps de fonctionnement</small></article>
+      <article className="bl-kpi"><div className="bl-kpiTop"><span>HEURES D'ARRÊT</span><span className="bl-kpiIcon bl-orange"><Clock3 /></span></div><strong>{hours(stopped)}</strong><small>Arrêts enregistrés</small></article>
+      <article className="bl-kpi"><div className="bl-kpiTop"><span>DISPONIBILITÉ</span><span className="bl-kpiIcon bl-violet"><TrendingUp /></span></div><strong>{availability} %</strong><small>Marche / heures planifiées</small></article>
     </section>
+    <section className="bl-filters">
+      <div className="bl-search"><Search /><input aria-label="Rechercher une saisie" placeholder="Rechercher machine, commentaire..." value={query} onChange={e => setQuery(e.target.value)} /></div>
+      <div className="bl-filter"><label>Unité</label><select value={filterUnit} onChange={e => {setFilterUnit(e.target.value);setFilterMachine("");}}><option value="">Toutes les unités</option>{units.map(u=><option key={u} value={u}>{u}</option>)}</select></div>
+      <div className="bl-filter"><label>Machine</label><select value={filterMachine} onChange={e => setFilterMachine(e.target.value)}><option value="">Toutes les machines</option>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+      <div className="bl-filter"><label>Mois</label><input aria-label="Filtrer par mois" type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} /></div>
+      <button className="bl-reset" onClick={resetFilters}><RotateCcw /> Réinitialiser</button>
+    </section>
+    <div className="bl-count"><span><strong>{filtered.length}</strong> saisie(s) sur {rows.length}</span><span>Indicateurs calculés sur la sélection</span></div>
+    <div className="operationsActions"><button className="primary" onClick={openEditor}><Plus /> Ajouter Operating Time</button></div>
     <div className="tableWrap">
       <table><thead><tr><th>Date</th><th>Machine</th><th>Marche</th><th>Arrêt</th><th>Commentaire</th><th>Saisi par</th><th /></tr></thead>
         <tbody>{filtered.map(row => <tr key={row.id}><td>{row.date_jour}</td><td>{row.machine}</td><td>{Number(row.heures_marche || 0).toFixed(2)} h</td><td>{Number(row.heures_arret || 0).toFixed(2)} h</td><td>{row.commentaire || "—"}</td><td>{row.saisi_par || "—"}</td><td /></tr>)}</tbody>
