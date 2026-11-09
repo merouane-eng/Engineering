@@ -268,3 +268,144 @@ input:focus, select:focus { border-color:#57c7ff; box-shadow:0 0 0 3px rgba(87,1
 .operationsMaster .bl-reset svg{width:14px;height:14px}
 .operationsMaster .bl-kpi strong{overflow-wrap:anywhere}
 @media(max-width:600px){.operationsMaster .operationsActions{justify-content:stretch}.operationsMaster .operationsActions .primary{width:100%;justify-content:center}.operationsMaster .bl-kpi{padding:13px}.operationsMaster .bl-kpi strong{font-size:23px}}
+
+
+/* ================================================================
+   ENGINEERING APPEARANCE — TWO GLOBAL VISUAL THEMES
+   Presentation-only overrides. No API, forms or data behavior change.
+   ================================================================ */
+:root[data-theme="dark"] {
+  color-scheme:dark;
+  --skin-bg:#07111f; --skin-surface:#101e30; --skin-elevated:#14263c;
+  --skin-field:#10243a; --skin-line:#263f59; --skin-text:#e8f2fc;
+  --skin-muted:#92a9bf; --skin-blue:#7dcfff;
+}
+:root[data-theme="light"] {
+  color-scheme:light;
+  --skin-bg:#f3f7fc; --skin-surface:#fff; --skin-elevated:#f8fafd;
+  --skin-field:#f6f9fd; --skin-line:#dce5ef; --skin-text:#203953;
+  --skin-muted:#637991; --skin-blue:#256ac2;
+}
+:root[data-theme] {background:var(--skin-bg);color:var(--skin-text)}
+:root[data-theme] body, :root[data-theme] #root {background:var(--skin-bg);color:var(--skin-text)}
+:root[data-theme] .main {background:radial-gradient(circle at 85% 0%,color-mix(in srgb,var(--skin-blue) 8%,transparent),transparent 36%),var(--skin-bg);color:var(--skin-text)}
+:root[data-theme] .pageTitle h2 {color:var(--skin-text)}
+:root[data-theme] .pageTitle p, :root[data-theme] .hint {color:var(--skin-muted)}
+:root[data-theme] .eyebrow {color:var(--skin-blue)}
+:root[data-theme] :is(input,select,textarea) {color:var(--skin-text);background:var(--skin-field);border-color:var(--skin-line)}
+:root[data-theme] :is(input,textarea)::placeholder {color:var(--skin-muted);opacity:.9}
+:root[data-theme] :is(input,select,textarea):focus-visible, :root[data-theme] button:focus-visible {outline:2px solid var(--skin-blue);outline-offset:2px}
+:root[data-theme] .tableWrap {background:var(--skin-surface);border-color:var(--skin-line)}
+:root[data-theme] th {background:var(--skin-elevated);color:var(--skin-muted)}
+:root[data-theme] :is(th,td) {border-bottom-color:var(--skin-line)}
+:root[data-theme] td {color:var(--skin-text)}
+:root[data-theme] .search {background:var(--skin-field);border-color:var(--skin-line)}
+:root[data-theme] .search input {background:transparent;color:var(--skin-text)}
+:root[data-theme] .modal {background:var(--skin-surface);border-color:var(--skin-line);color:var(--skin-text)}
+:root[data-theme] .modalHead h3 {color:var(--skin-text)}
+:root[data-theme] :is(.formGrid label,.fullField,.piecePicker label) {color:var(--skin-muted)}
+:root[data-theme] .modalActions > button:not(.primary), :root[data-theme] .iconButton {color:var(--skin-text);border-color:var(--skin-line);background:var(--skin-elevated)}
+:root[data-theme] .secondary {color:var(--skin-blue);border-color:var(--skin-line);background:var(--skin-elevated)}
+:root[data-theme] .empty {color:var(--skin-muted)}
+:root[data-theme] .languageSwitch {background:var(--skin-surface);border-color:var(--skin-line)}
+:root[data-theme] .languageSwitch button:not(.selected){color:var(--skin-text)}
+
+/* Persistent accessible appearance control inside navigation */
+.themePicker {padding:13px 5px 14px;margin-top:auto;border-top:1px solid var(--skin-line,#283e55)}
+.themePickerLabel {display:block;margin:0 5px 8px;color:var(--skin-muted,#9ab0c7);font-size:9px;font-weight:850;letter-spacing:.15em}
+.themePickerOptions {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;padding:4px;background:var(--skin-elevated,#12243a);border:1px solid var(--skin-line,#263f59);border-radius:11px}
+.themePickerOptions button {display:flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:4px 7px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--skin-muted,#91a5bb);font-size:11px;font-weight:750}
+.themePickerOptions button svg {width:15px;height:15px}
+.themePickerOptions button.selected {border-color:var(--skin-line,#34516d);background:var(--skin-surface,#0b1b2d);color:var(--skin-blue,#7dcfff);box-shadow:0 2px 8px #00000012}
+:root[data-theme="light"] .sidebar {background:#fff;border-right-color:#dae5f1;box-shadow:5px 0 35px #163b6408}
+:root[data-theme="light"] .brand strong, :root[data-theme="light"] .userBlock strong {color:#203953}
+:root[data-theme="light"] .brand small, :root[data-theme="light"] .userBlock small {color:#74869b}
+:root[data-theme="light"] .sidebar nav button.moduleNav {color:#435d78}
+:root[data-theme="light"] .sidebar nav button.moduleNav:hover {background:#eef5fc;border-color:#dce7f3;color:#1c416b}
+:root[data-theme="light"] .sidebar nav button.moduleNav.active {color:#153f6f;background:linear-gradient(90deg,#e3f1ff,#f5f9ff);border-color:#cbdff2;box-shadow:inset 3px 0 var(--module-color)}
+:root[data-theme="light"] .userBlock {border-top-color:#dce5ef}
+:root[data-theme="light"] .userBlock button {color:#647e97}
+:root[data-theme="light"] .avatar {background:#dbeaff;color:#1c548c}
+:root[data-theme="light"] .primary {background:#1769bd;color:#fff}
+:root[data-theme="light"] .primary:hover {background:#0b539c}
+:root[data-theme="light"] .loginPage {background:radial-gradient(circle at 50% 12%,#e1efff,transparent 40%),#f3f7fc}
+:root[data-theme="light"] .loginCard {background:#fff;border-color:#dce5ef;box-shadow:0 25px 65px #214e781a}
+:root[data-theme="light"] .loginCard h1 {color:#1c385b}
+:root[data-theme="light"] .loginCard > p {color:#677d95}
+:root[data-theme="light"] .usernameSuggestions {background:#fff;border-color:#dce5ef}
+:root[data-theme="light"] .usernameSuggestions button {color:#27445f;border-color:#e4ecf4}
+:root[data-theme="light"] .formError {background:#fff1f1;color:#a73b45}
+:root[data-theme="light"] .failureForm section:not(.fm-card) {background:#fff;border-color:#dce5ef}
+:root[data-theme="light"] .failureForm h3 {color:#1c548c}
+:root[data-theme="light"] .usedParts > div {background:#f7fafd;border:1px solid #e2eaf3}
+:root[data-theme="light"] .usedParts strong {color:#25425e}
+:root[data-theme="light"] .usedParts span {color:#6e8196}
+:root[data-theme="light"] .machineParts {background:#f8fbff;border-color:#dce5ef}
+
+/* Sombre: modules previously hard-coded to a light theme */
+:root[data-theme="dark"] .machineMaster, :root[data-theme="dark"] .failureMaster, :root[data-theme="dark"] .breakdownListMaster {color:#e8f2fc!important}
+:root[data-theme="dark"] .machineMaster :is(.mm-kpi,.mm-filters,.mm-listPanel,.mm-sidePanel,.mm-machine),
+:root[data-theme="dark"] .failureMaster :is(.fm-step,.fm-card,.machineParts,.usedParts>div,.fm-submit,.piecePicker),
+:root[data-theme="dark"] .breakdownListMaster :is(.bl-kpi,.bl-filters,.tableWrap) {
+  background:linear-gradient(145deg,#12263c,#0d1d30)!important;border-color:#29445f!important;box-shadow:0 8px 24px #00000016!important;
+}
+:root[data-theme="dark"] .machineMaster :is(.mm-kpi strong,.mm-sectionTitle h2,.mm-listHead h3,.mm-machine h4,.mm-sidePanel h3,.mm-unitLabel strong,.mm-sideStats strong),
+:root[data-theme="dark"] .failureMaster :is(.fm-step strong,.fm-head h3,.usedParts strong),
+:root[data-theme="dark"] .breakdownListMaster :is(.bl-kpi strong,.bl-count strong) {color:#edf6ff!important}
+:root[data-theme="dark"] .machineMaster :is(.mm-kpi span:last-child,.mm-field label,.mm-listHead span,.mm-machineMeta span,.mm-sidePanel>p,.mm-unitLabel,.mm-sideStats span),
+:root[data-theme="dark"] .failureMaster :is(.fm-step small,.fm-head p,.fm-hint,.fm-submit span,.fm-meta span,.failurePartsToolbar p),
+:root[data-theme="dark"] .breakdownListMaster :is(.bl-kpiTop,.bl-kpi small,.bl-filter label,.bl-count) {color:#9db3c9!important}
+:root[data-theme="dark"] .machineMaster :is(.mm-field input,.mm-field select,.mm-reset,.mm-machineFoot button,.mm-machineMeta span,.mm-sideStats div),
+:root[data-theme="dark"] .failureMaster :is(.failureForm label input,.failureForm label select,.failureForm label textarea,.fm-meta span,.fm-step b),
+:root[data-theme="dark"] .breakdownListMaster :is(.bl-search,.bl-filter select,.bl-filter input,.bl-reset) {background:#10253b!important;border-color:#34516b!important;color:#dcecfb!important}
+:root[data-theme="dark"] .machineMaster :is(.mm-machineFoot,.mm-listHead,.mm-sideStats),:root[data-theme="dark"] .failureMaster .fm-head {border-color:#29445f!important}
+:root[data-theme="dark"] .machineMaster .mm-tag {background:#1a3c60!important;color:#a4d9ff!important}
+:root[data-theme="dark"] .machineMaster .mm-track {background:#223950!important}
+:root[data-theme="dark"] .failureMaster :is(.failureForm label,.fm-meta b,.machineParts h4) {color:#bed5e9!important}
+:root[data-theme="dark"] .breakdownListMaster :is(.bl-search input,.bl-tech,.bl-wo) {color:#c9e6ff!important}
+:root[data-theme="dark"] .breakdownListMaster tbody td:not(.bl-technician-cell) {color:#99cfff!important}
+:root[data-theme="dark"] .breakdownListMaster th {background:#122941!important;color:#8ccaff!important;border-color:#29445f!important}
+:root[data-theme="dark"] .breakdownListMaster .bl-tech i {background:#1b4165;color:#b8ddff}
+:root[data-theme="dark"] .failureMaster .fm-submit {backdrop-filter:blur(16px);background:#10253beb!important}
+
+/* Clair: preserve the premium hero banners, brighten all dark dashboards */
+:root[data-theme="light"] .statCard, :root[data-theme="light"] .dashboardKpi, :root[data-theme="light"] .dashboardPanel,
+:root[data-theme="light"] .statsPage :is(.statsKpi,.statsPanel,.statsToolbar,.statsCard,.statsRankRow,.statsSection),
+:root[data-theme="light"] .effectifMaster :is(.ef-kpi,.ef-toolbar,.ef-person,.ef-empty) {
+  background:linear-gradient(145deg,#fff,#f8fbff)!important;border-color:#dce5ef!important;box-shadow:0 5px 20px #183b640b!important;
+}
+:root[data-theme="light"] .statCard strong, :root[data-theme="light"] .dashboardKpi>strong,
+:root[data-theme="light"] .dashboardSectionHead h2,
+:root[data-theme="light"] .effectifMaster :is(.ef-kpi strong,.ef-personName strong,.ef-results strong),
+:root[data-theme="light"] .statsPage :is(h2,h3,strong) {color:#203c59!important}
+:root[data-theme="light"] .dashboardPanel :is(h3,strong), :root[data-theme="light"] .statCard strong {color:#203c59}
+:root[data-theme="light"] .dashboardPanel :is(p,small,span), :root[data-theme="light"] .dashboardKpi :is(small,span),
+:root[data-theme="light"] .effectifMaster :is(.ef-kpi small,.ef-kpiTag,.ef-results,.ef-personName small,.ef-metaRow>span,.ef-empty),
+:root[data-theme="light"] .statsPage :is(p,small) {color:#667f98}
+:root[data-theme="light"] .effectifMaster {color:#203c59}
+:root[data-theme="light"] .effectifMaster :is(.ef-search,.ef-filter select,.ef-reset,.ef-personRole,.ef-unitTags span,.ef-personFoot button) {
+  color:#294968;background:#f4f8fd;border-color:#dce5ef!important;
+}
+:root[data-theme="light"] .effectifMaster :is(.ef-search input,.ef-personRole,.ef-metaRow>strong) {color:#254460}
+:root[data-theme="light"] .effectifMaster .ef-filter label {color:#617991}
+:root[data-theme="light"] .effectifMaster .ef-avatar {background:#e2f1ff;color:#2566a7;border-color:#c6dfef}
+:root[data-theme="light"] .effectifMaster .ef-personFoot {border-color:#dce5ef}
+:root[data-theme="light"] .effectifMaster .ef-unitTags span {color:#24649e}
+:root[data-theme="light"] .statsPage {color:#203c59}
+:root[data-theme="light"] .statsToolbar :is(select,input,button) {background:#f6f9fd;color:#284460;border-color:#dce5ef}
+:root[data-theme="light"] .dashboardRefresh {background:#fff;color:#315a7f;border-color:#dce5ef}
+:root[data-theme="light"] .dashboardRow {border-color:#e4ebf4}
+:root[data-theme="light"] .dashboardRowMain strong {color:#253e5a}
+:root[data-theme="light"] .dashboardRowMain span {color:#67809a}
+:root[data-theme="light"] .dashboardPanelHead h3 {color:#244364}
+:root[data-theme="light"] .effectifMaster .ef-hero, :root[data-theme="light"] .dashboardHero {box-shadow:0 12px 30px #183b6424}
+:root[data-theme="light"] .breakdownListMaster .tableWrap {border-color:#dce5ef}
+:root[data-theme="light"] .sidebar .themePickerOptions button.selected {background:#fff;color:#1769bd}
+
+/* common polish, without hiding controls or altering content */
+:root[data-theme] :is(.mm-kpi,.bl-kpi,.ef-kpi,.dashboardKpi) {transition:background-color .2s,border-color .2s,box-shadow .2s}
+:root[data-theme] :is(.modal,.tableWrap,.mm-listPanel,.ef-person,.bl-filters) {transition:background-color .2s,border-color .2s}
+@media(max-width:760px) {
+  .themePicker {padding:11px 5px}
+  .themePickerOptions button{min-height:38px}
+}
