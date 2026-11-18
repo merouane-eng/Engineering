@@ -622,6 +622,7 @@ function PreventiveMaintenance({ user }) {
   const [filterUnit, setFilterUnit] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
+  const [serviceDrafts, setServiceDrafts] = useState({});
   const [form, setForm] = useState(null);
   const [realization, setRealization] = useState(null);
   const [error, setError] = useState("");
@@ -645,6 +646,14 @@ function PreventiveMaintenance({ user }) {
   const completion = filtered.length ? Math.round(realizedCount / filtered.length * 100) : 0;
   const resetFilters = () => {setQuery("");setFilterUnit("");setFilterStatus("");setFilterMonth("");};
   const canPlan = user.role === "admin" || user.role === "superviseur";
+  const servicesPM = [...new Set([...(context.services||[]), "Électricité"].filter(Boolean))].sort((a,b)=>a.localeCompare(b,"fr"));
+  const assignService = async row => {
+    setError("");
+    try {
+      await api("/api/pm/"+row.id+"/service",{method:"PUT",body:JSON.stringify({service_intervenant:serviceDrafts[row.id] ?? row.service_intervenant ?? ""})});
+      await load();
+    } catch(err){setError(err.message);}
+  };
 
   const openForm = () => setForm({
     unite: context.units[0] || "",
@@ -653,6 +662,7 @@ function PreventiveMaintenance({ user }) {
     tolerance_jours: 7,
     date_prevue: "",
     responsable: [user.nom, user.prenom].filter(Boolean).join(" ").trim(),
+    service_intervenant: user.role==="admin"?"":(user.service||""),
     commentaire: ""
   });
 
@@ -688,6 +698,8 @@ function PreventiveMaintenance({ user }) {
 
   return <div className="breakdownListMaster operationsMaster">
     <PageTitle title="Maintenance préventive" subtitle={filtered.length + " / " + rows.length + " PM affichée(s)"} />
+    {user.role!=="admin" && String(user.service||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="electricite" &&
+      <div className="pm-electricScope"><Wrench size={16}/> Vue Électricité — seules les PM attribuées à votre service sont visibles.</div>}
     {error && <div className="formError">{error}</div>}
     <section className="bl-kpis">
       <article className="bl-kpi"><div className="bl-kpiTop"><span>TOTAL PM</span><span className="bl-kpiIcon bl-blue"><CalendarClock /></span></div><strong>{filtered.length}</strong><small>Maintenances filtrées</small></article>
@@ -706,11 +718,12 @@ function PreventiveMaintenance({ user }) {
     <div className="operationsActions">{canPlan && <button className="primary" onClick={openForm}><Plus /> Ajouter une PM</button>}</div>
     <div className="tableWrap">
       <table>
-        <thead><tr><th>Date prévue</th><th>Unité</th><th>Machine</th><th>Fréquence</th><th>Responsable</th><th>Statut</th><th /></tr></thead>
+        <thead><tr><th>Date prévue</th><th>Unité</th><th>Machine</th><th>Fréquence</th><th>Responsable</th><th>Service intervenant</th><th>Statut</th><th /></tr></thead>
         <tbody>{filtered.map(row => <tr key={row.id}>
           <td>{row.date_prevue}</td><td>{row.unite}</td>
           <td>{row.machine_tag} — {row.machine_designation || ""}</td><td>{row.frequence}</td>
-          <td>{row.responsable || "—"}</td><td>{row.statut}</td>
+          <td>{row.responsable || "—"}</td>
+          <td>{user.role==="admin" ? <div className="pm-serviceAssign"><select aria-label={"Service de la PM "+row.id} value={serviceDrafts[row.id] ?? row.service_intervenant ?? ""} onChange={e=>setServiceDrafts(old=>({...old,[row.id]:e.target.value}))}><option value="">Non attribuée</option>{[...new Set([...servicesPM,row.service_intervenant].filter(Boolean))].map(s=><option key={s} value={s}>{s}</option>)}</select><button type="button" onClick={()=>assignService(row)} title="Enregistrer le service intervenant">Valider</button></div> : (row.service_intervenant||"Électricité")}</td><td>{row.statut}</td>
           <td className="actions">{row.statut === "Planifiée" &&
             <button className="primary" onClick={() => openRealization(row)}>Réaliser</button>}</td>
         </tr>)}</tbody>
@@ -729,6 +742,7 @@ function PreventiveMaintenance({ user }) {
         <label>Fréquence<select required value={form.frequence} onChange={e => setForm({ ...form, frequence: e.target.value })}><option value="">Sélectionner...</option>{context.frequencies.map(frequency => <option key={frequency} value={frequency}>{frequency}</option>)}</select></label>
         <label>Tolérance (jours)<input required type="number" min="0" value={form.tolerance_jours} onChange={e => setForm({ ...form, tolerance_jours: Number(e.target.value) })} /></label>
         <label>Responsable<input required value={form.responsable} disabled /></label>
+        {user.role==="admin"&&<label>Service intervenant<select value={form.service_intervenant||""} onChange={e=>setForm({...form,service_intervenant:e.target.value})}><option value="">Non attribué</option>{servicesPM.map(s=><option key={s} value={s}>{s}</option>)}</select></label>}
         <label className="fullField">Commentaire<textarea value={form.commentaire} onChange={e => setForm({ ...form, commentaire: e.target.value })} /></label>
       </div>
       <div className="modalActions"><button type="button" onClick={() => setForm(null)}>Annuler</button><button className="primary" type="submit"><Save /> Enregistrer</button></div>
