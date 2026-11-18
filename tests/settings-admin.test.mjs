@@ -87,6 +87,7 @@ test("Accès : aucune lecture/écriture sans compte admin",async()=>{
    ["PUT","/api/settings/references/:id",{id:"1"}],
    ["DELETE","/api/settings/references/:id",{id:"1"}],
    ["GET","/api/settings/backup",{}],
+   ["GET","/api/settings/backup/global",{}],
    ["POST","/api/settings/restore/:action",{action:"preview"}]
   ]){
    const response=await fx.call(verb,path,{params,user:{role:"technicien",id:"user-admin"}});
@@ -163,5 +164,19 @@ test("Références actives lisibles par les techniciens pour les sélecteurs",as
   const result=await fx.call("GET","/api/references/active",{user:{role:"technicien",id:"e1"}});
   assert.equal(result.statusCode,200);
   assert.ok(result.body.every(r=>!("id" in r)));
+ }finally{fx.restore();}
+});
+
+test("Sauvegarde globale : classeur multifeuille, lecture seule et sans compte secret",async()=>{
+ const fx=fixtures();
+ try{
+  const r=await fx.call("GET","/api/settings/backup/global");
+  assert.equal(r.statusCode,200,JSON.stringify(r.body));
+  assert.equal(r.binary?.subarray(0,2).toString(),"PK");
+  const rows=readXlsx(r.binary);
+  assert.equal(rows[0][0],"Champ");
+  assert.ok(rows.some(x=>x[0]==="Application"));
+  assert.ok(rows.some(x=>x[0]==="Sécurité"));
+  assert.ok(fx.events.every(x=>x.action==="list"));
  }finally{fx.restore();}
 });
