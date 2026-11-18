@@ -652,14 +652,14 @@ async function remoteModuleRows(module, user) {
   const units = await allowedUnitsForUser(user);
   let rows = [];
   if (module === "liste" || module === "saisie") {
-    rows = await supabaseRequest("pannes", { query: "?select=*&order=id.desc&limit=1000" });
+    rows = await supabaseRequest("pannes", { query: "?select=*&order=id.desc&limit=5000" });
     const visible=rows.filter(row=>units.includes(row.unite));
     if (!isElectrician(user)) return visible;
     const names=await electricServiceNames();
     return visible.filter(row=>electricPanne(row,names));
   }
   if (module === "pm") {
-    rows = await supabaseRequest("pm_programmees", { query: "?select=*&order=date_prevue.desc&limit=1000" });
+    rows = await supabaseRequest("pm_programmees", { query: "?select=*&order=date_prevue.desc&limit=5000" });
     const visible=rows.filter(row=>units.includes(row.unite));
     if (!isElectrician(user)) return visible;
     const names=await electricServiceNames();
@@ -1473,7 +1473,7 @@ app.get("/api/tables/:table", requireAuth, async (req, res) => {
       const module = ({pannes:"liste",pm_programmees:"pm",operating_time:"operating",sop:"sop"})[table];
       return res.json(await remoteModuleRows(module, req.user));
     }
-    const rows = await supabaseRequest(table, { query: "?select=*&limit=1000" });
+    const rows = await supabaseRequest(table, { query: "?select=*&limit=5000" });
     if (table==="pm_realisees" && isElectrician(req.user)) {
       const [pms,names]=await Promise.all([remoteModuleRows("pm",req.user),electricServiceNames()]);
       const allowedIds=new Set(pms.map(pm=>String(pm.id)));
