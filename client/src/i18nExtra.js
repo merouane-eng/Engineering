@@ -523,4 +523,12 @@ export const EXTRA_EN = {
   "Prochaines interventions": "Upcoming interventions",
   "Date de fin de contrat": "Contract end date",
   "Type contrat": "Contract type",
+  "admin": "Administrator",
+  "superviseur": "Supervisor",
+  "technicien": "Technician",
+  "GMAO": "CMMS",
+  "RH": "HR",
+  "SOP": "SOP",
+  "Ajouter une PM": "Add PM",
+  "Sans référence": "No reference",
 };
