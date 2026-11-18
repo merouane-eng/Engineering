@@ -793,3 +793,68 @@ button{touch-action:manipulation}
  .mobileTopbarBrand small{max-width:70px}
  .mobileTopbar .appLanguage button{padding:6px;font-size:10px}
 }
+
+
+/* Import / export / modèles Excel administrateur (tous les écrans) */
+.adminExcel{max-width:100%;min-width:0;margin-bottom:17px;padding:13px 15px;border:1px solid var(--skin-line,#2c4b66);border-radius:14px;
+  background:var(--skin-surface,#112338);box-shadow:0 6px 22px #0713270c}
+.adminExcelTop{display:flex;align-items:center;flex-wrap:wrap;gap:10px 15px}
+.adminExcelBadge{display:inline-flex;align-items:center;gap:5px;padding:6px 9px;border:1px solid #1e927658;border-radius:8px;
+  color:#79e9c0;background:#175a4930;font-size:9px;font-weight:900;letter-spacing:.08em}
+.adminExcelTitle{display:flex;align-items:center;gap:9px;flex:1 1 170px;min-width:0}
+.adminExcelTitle>svg{flex:0 0 20px;color:#5ed6b3}
+.adminExcelTitle strong{display:block;font-size:13px;color:var(--skin-text,#e8f7ff)}
+.adminExcelTitle small{display:block;margin-top:3px;font-size:10px;color:var(--skin-muted,#91aac2)}
+.adminExcelSelector{display:flex;align-items:center;gap:9px;min-width:0}
+.adminExcelSelector label{font-size:10px;font-weight:800;color:var(--skin-muted,#91aac2)}
+.adminExcelSelector select{height:36px;max-width:240px;min-width:145px;border:1px solid var(--skin-line,#315574);border-radius:8px;
+  background:var(--skin-bg,#0c1e31);color:var(--skin-text,#e2effa);font-size:12px}
+.adminExcelActions{display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin-top:12px;padding-top:12px;border-top:1px solid var(--skin-line,#2c4358)}
+.adminExcelButton{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 13px;
+  border:1px solid var(--skin-line,#315575);border-radius:9px;background:var(--skin-bg,#142a40);color:var(--skin-text,#dceafa);
+  font-size:11px;font-weight:750;white-space:nowrap}
+.adminExcelButton.accent{background:#1b7369;border-color:#318c80;color:#f4fffb}
+.adminExcelButton:hover:not(:disabled){border-color:#47bdac;filter:brightness(1.1)}
+.adminExcelButton:disabled{opacity:.5;cursor:wait}
+.adminExcelLoading{color:#73c4d8;font-size:11px}
+.adminExcelPreview{padding:13px;margin-top:12px;background:var(--skin-bg,#0c1d2d);border:1px solid var(--skin-line,#31516a);border-radius:10px}
+.adminExcelPreviewHead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.adminExcelPreviewHead strong{color:var(--skin-text,#e6f5ff);font-size:12px;overflow-wrap:anywhere}
+.adminExcelPreviewHead small{display:block;margin-top:4px;color:var(--skin-muted,#9aafc3);font-size:11px}
+.adminExcelPreviewHead button{flex:0 0 34px;min-height:34px;border:0;background:transparent;color:var(--skin-text,#d1e8f8)}
+.adminExcelNumbers{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.adminExcelNumbers span{padding:7px 9px;border:1px solid var(--skin-line,#30516a);border-radius:7px;color:var(--skin-muted,#a7c0d4);font-size:11px}
+.adminExcelNumbers strong{color:var(--skin-text,#e6f7ff);font-size:13px}
+.adminExcelConfirm{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:11px;margin-top:12px}
+.adminExcelConfirm span,.adminExcelReport{display:flex;align-items:center;flex-wrap:wrap;gap:7px;color:#5cd9b3;font-size:11px}
+.adminExcelConfirm button{min-height:40px;padding:8px 15px;border:0;border-radius:8px;background:#167d6a;color:white;font-weight:800;font-size:12px}
+.adminExcelConfirm button:disabled{opacity:.5;cursor:not-allowed}
+.adminExcelReport,.adminExcelErrors{margin-top:11px;padding:11px 13px;border:1px solid #34806c;border-radius:9px;background:#1b56402a}
+.adminExcelErrors{border-color:#bd6359;color:#f8b1a6;background:#6b302a33;font-size:11px}
+.adminExcelErrors svg,.adminExcelReport svg{flex-shrink:0}
+.adminExcelErrors ul,.adminExcelReport ul{flex:1 1 100%;margin:8px 0 0 14px;padding-left:15px}
+.adminExcelErrors li,.adminExcelReport li{margin:4px 0}
+:root[data-theme="light"] .adminExcelBadge{background:#e5f7ef;color:#177b5f}
+:root[data-theme="light"] .adminExcelButton.accent{background:#167d6a;color:white}
+:root[data-theme="light"] .adminExcelReport{color:#1e795e;background:#eaf8f1}
+:root[data-theme="light"] .adminExcelErrors{background:#fff0ed;color:#9e453b}
+@media(max-width:800px){
+ .adminExcel{padding:12px;margin-bottom:14px}
+ .adminExcelSelector{flex:1 1 170px;justify-content:flex-end}
+ .adminExcelSelector select{max-width:190px;min-width:130px}
+}
+@media(max-width:600px){
+ .adminExcelTop{gap:9px}
+ .adminExcelTitle{flex:1 1 calc(100% - 82px)}
+ .adminExcelTitle strong{font-size:13px}
+ .adminExcelTitle small{font-size:10px;line-height:1.4}
+ .adminExcelSelector{flex:1 1 100%;justify-content:space-between}
+ .adminExcelSelector select{flex:1;max-width:none;min-width:0}
+ .adminExcelActions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+ .adminExcelButton{min-width:0;min-height:42px;padding:8px 5px;font-size:11px;gap:4px}
+ .adminExcelButton svg{width:15px;height:15px}
+ .adminExcelLoading{grid-column:1/-1}
+ .adminExcelConfirm button{width:100%}
+ .adminExcelNumbers span{font-size:10px}
+}
+@media(max-width:360px){.adminExcelButton{font-size:10px}}
