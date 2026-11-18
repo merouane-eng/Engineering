@@ -116,7 +116,10 @@ function GaugeRing({value,label,unit="%",tone="green"}){
 }
 function statsReducer(data,site,unit,machine,period,month,now){
  const assets=data.machines.filter(r=>(!site||unitSite(r.unite)===site)&&(!unit||r.unite===unit)&&(!machine||r.tag===machine));
- const tags=new Set(assets.map(r=>r.tag)),units=new Set(assets.map(r=>r.unite));
+ const tags=new Set(assets.map(r=>r.tag));
+ // Inclure les interventions de services généraux sans machine de production,
+ // mais appliquer toujours le périmètre d'unités fourni par le serveur.
+ const units=new Set(data.units.filter(u=>(!site||unitSite(u)===site)&&(!unit||u===unit)));
  const low=new Date(now);low.setHours(0,0,0,0);
  if(period==="30")low.setDate(low.getDate()-29);
  if(period==="90")low.setDate(low.getDate()-89);
