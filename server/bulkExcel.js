@@ -139,6 +139,7 @@ function normalizeForSave(module,row,context,existing){
     // Ne pas fabriquer des identifiants ou secrets de connexion pendant un import Excel.
     return {insert:{matricule:coerce(row.matricule),nom:coerce(row.nom),prenom:coerce(row.prenom),
       initiale:coerce(row.initiale)||null,service:coerce(row.service),fonction:coerce(row.fonction),
+      telephone:coerce(row.telephone)||null,email:coerce(row.email)||null,
       date_recrutement:row.date_recrutement||null,date_depart:row.date_depart||null,
       role:"technicien",actif:bool(row.actif,true),
       toutes_unites:all,site:desiredSite, ...contractData},
