@@ -2,7 +2,7 @@
  * Accès mutation / sauvegarde strictement administrateur, vérification du rôle en base.
  * Les données métier ne sont jamais supprimées ni renommées silencieusement. */
 import crypto from "node:crypto";
-import {makeXlsx,readXlsx} from "./excel.js";
+import {makeXlsx,readXlsx,makeMultiSheetXlsx} from "./excel.js";
 
 export const REFERENCE_TABS = [
   ["service","Services"],["fonction","Fonctions"],["zone","Zones"],
@@ -166,6 +166,51 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
         const id=Number(req.params.id);
         if(!Number.isSafeInteger(id)||id<=0)throw new Error("Identifiant invalide.");
         res.json(await rpc("delete",{p_id:id}));
+      }));
+
+      // Sauvegarde GLOBALE, lecture seule, 11 tables métier + références.
+      // Jamais d'identifiants de connexion ni password_hash dans le fichier.
+      app.get("/api/settings/backup/global",requireAuth,admin,safe(async(req,res)=>{
+        const schema=[
+          ["machines","Machines",["tag","designation","unite","groupe","zone","marque","modele","numero_serie","date_mise_service","actif","commentaire"]],
+          ["effectif","Effectif",["matricule","nom","prenom","initiale","service","fonction","telephone","email","role","actif","toutes_unites","date_recrutement","date_depart","site","type_contrat","date_fin_contrat"]],
+          ["effectif_unites","Affectations",["effectif_id","unite"]],
+          ["pannes","Pannes",["wo","date_panne","heure_panne","date_debut","date_fin","unite","machine","probleme","area","service","mois","technicien","downtime","statut","commentaire","pieces_consommees"]],
+          ["pm_programmees","PM programmees",["machine_tag","machine_designation","unite","groupe","frequence","tolerance_jours","date_prevue","mois","annee","statut","responsable","service_intervenant","commentaire","motif_report"]],
+          ["pm_realisees","PM realisees",["id_pm_prog","machine_tag","machine_designation","unite","date_prevue","date_debut","date_fin","downtime","technicien","ponctualite","commentaire","statut"]],
+          ["operating_time","Operating Time",["machine","date_jour","heures_planifiees","heures_marche","heures_arret","commentaire","saisi_par"]],
+          ["pieces","Pieces catalogue",["reference","nom","description","actif"]],
+          ["machine_pieces","Pieces machines",["machine","piece_id","reference","nom"]],
+          ["panne_pieces","Pieces utilisees",["panne_id","piece_id","machine","wo","reference","nom","quantite","date_utilisation","technicien"]],
+          ["sop","SOP",["code","titre","version","machine","unite","date_application","date_revision","validateur","chemin_fichier","commentaire","actif"]]
+        ];
+        const datasets=await Promise.all(schema.map(async([table,name,fields])=>{
+          const rows=[];
+          for(let offset=0;offset<10000;offset+=1000){
+            const page=await supabaseRequest(table,{
+              query:"?select="+fields.join(",")+"&limit=1000&offset="+offset+
+                "&order="+(table==="effectif_unites"?"unite":"id")+".asc"
+            });
+            rows.push(...page);
+            if(page.length<1000)break;
+          }
+          return {name,headers:fields,rows:rows.map(r=>fields.map(f=>r[f]??""))};
+        }));
+        const refs=await list(),refFields=["type_liste","valeur","parent","ordre","actif"];
+        datasets.push({name:"Parametres",headers:refFields,rows:refs.map(r=>refFields.map(f=>r[f]??""))});
+        datasets.unshift({name:"Informations",headers:["Champ","Valeur"],rows:[
+          ["Application","Engineering — sauvegarde globale"],
+          ["Date export",new Date().toISOString()],
+          ["Modules",String(schema.length)+" modules métier + références"],
+          ["Type","Archive en lecture seule : aucune donnée supprimée ou modifiée."],
+          ["Sécurité","Mots de passe, hashes et secrets volontairement exclus."],
+          ["Restauration","Utiliser les imports Excel par module (fusion non destructive)."]
+        ]});
+        const bytes=makeMultiSheetXlsx(datasets);
+        res.set("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.set("Content-Disposition",'attachment; filename="Engineering_Sauvegarde_Globale.xlsx"');
+        res.set("Cache-Control","private,no-store");
+        res.send(bytes);
       }));
       app.get("/api/settings/backup",requireAuth,admin,safe(async(req,res)=>{
         const refs=await list();
