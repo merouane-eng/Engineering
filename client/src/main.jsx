@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 import Effectif from "./EffectifRH.jsx";
+import StatsMaster from "./StatsMaster.jsx";
 import DesktopSettings from "./DesktopSettings.jsx";
 import AdminExcelBar from "./AdminExcelBar.jsx";
 import { useLanguage, LanguageSwitch } from "./i18n.jsx";
@@ -163,7 +164,7 @@ function Dashboard({ user, onNavigate }) {
     <div className="dashboardFooter"><span>ENGINEERING · Gestion de maintenance industrielle</span><span><Clock3/> Données actualisées à la demande</span></div>
   </div>;
 }
-function Stats() {
+function StatsAncien() {
   const [dataset,setDataset]=useState({pannes:[],pm:[],operating:[],machines:[],units:[]});
   const [period,setPeriod]=useState("30"),[unit,setUnit]=useState("Toutes les unités"),[loading,setLoading]=useState(true),[error,setError]=useState("");
   const load=async()=>{
@@ -890,7 +891,7 @@ function App() {
   const logout = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch {} localStorage.removeItem("engineering_token"); localStorage.removeItem("engineering_user"); setUser(null); };
   if (!user) return <Login onLogin={login} language={language} setLanguage={setLanguage} />;
   const allowed = item => item === "parametres" ? user.role === "admin" : true;
-  const content = module === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : module === "stats" ? <Stats /> : module === "machines" ? <MachinePage user={user} /> : module === "saisie" ? <FailureEntry user={user} /> : module === "pm" ? <PreventiveMaintenance user={user} /> : module === "operating" ? <OperatingTime user={user} /> : module === "effectif" ? <Effectif user={user} api={api} /> :
+  const content = module === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : module === "stats" ? <StatsMaster theme={theme} onThemeChange={setTheme} /> : module === "machines" ? <MachinePage user={user} /> : module === "saisie" ? <FailureEntry user={user} /> : module === "pm" ? <PreventiveMaintenance user={user} /> : module === "operating" ? <OperatingTime user={user} /> : module === "effectif" ? <Effectif user={user} api={api} /> :
     module === "parametres" ? <AccessSettings user={user} /> : <DataPage key={module} module={module} user={user} />;
   return <div className="appShell">
     <aside id="engineering-sidebar" className={menuOpen ? "sidebar open" : "sidebar"}>
