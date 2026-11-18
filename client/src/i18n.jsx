@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { EXTRA_EN } from "./i18nExtra.js";
 
 const EN = {
   "Accueil":"Home",
@@ -216,69 +217,112 @@ const EN = {
   "Sélectionner une machine pour afficher son historique.":"Select a machine to view its history."
 };
 
-const ATTRS = ["placeholder", "title", "aria-label"];
-const normalize = value => value.replace(/\\s+/g, " ").trim();
-
-function translateDOM(root, language) {
-  if (!root) return;
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const nodes = [];
-  while (walker.nextNode()) nodes.push(walker.currentNode);
-  nodes.forEach(node => {
-    const original = node.nodeValue || "";
-    const key = normalize(original);
-    if (!key) return;
-    const translated = EN[key];
-    if (language === "en" && translated && key !== translated) {
-      node.nodeValue = original.replace(key, translated);
-    } else if (language === "fr") {
-      const french = Object.keys(EN).find(source => EN[source] === key);
-      if (french) node.nodeValue = original.replace(key, french);
-    }
-  });
-  root.querySelectorAll("*").forEach(element => ATTRS.forEach(attribute => {
-    const value = element.getAttribute(attribute);
-    if (!value) return;
-    const key = normalize(value);
-    if (language === "en") {
-      const translated = EN[key];
-      // Avoid generating another mutation when the attribute is already translated.
-      if (translated && value !== translated) element.setAttribute(attribute, translated);
-    } else {
-      const french = Object.keys(EN).find(source => EN[source] === key);
-      // Avoid MutationObserver feedback loops from writing an unchanged value.
-      if (french && value !== french) element.setAttribute(attribute, french);
-    }
-  }));
+// All current UI strings and newer modules. Stored business values are unchanged.
+const TRANSLATIONS={...EN,...EXTRA_EN};
+const REVERSE=Object.entries(TRANSLATIONS).reduce((map,[source,destination])=>{
+  if(!map.has(destination))map.set(destination,source);
+  return map;
+},new Map());
+const ATTRS=["placeholder","title","aria-label","aria-description","alt"];
+const normalize=value=>String(value||"").replace(/\s+/g," ").trim();
+const patterns=[
+  [/^(\d+)\s*\/\s*(\d+)\s+PM affichée\(s\)$/i,(a,b)=>a+" / "+b+" PM displayed"],
+  [/^(\d+)\s*\/\s*(\d+)\s+collaborateur\(s\) affiché\(s\)$/i,(a,b)=>a+" / "+b+" employees displayed"],
+  [/^(\d+)\s*\/\s*(\d+)\s+panne\(s\) affichée\(s\)$/i,(a,b)=>a+" / "+b+" breakdowns displayed"],
+  [/^(\d+)\s+collaborateur\(s\)$/i,n=>n+" employee(s)"],
+  [/^(\d+)\s+intervention\(s\)$/i,n=>n+" intervention(s)"],
+  [/^(\d+)\s+erreur\(s\)/i,n=>n+" error(s)"],
+  [/^(\d+)\s+ligne\(s\)/i,n=>n+" row(s)"],
+  [/^Derniers\s+(\d+)\s+jours$/i,n=>"Last "+n+" days"],
+  [/^(\d+)\s+derniers mois$/i,n=>"Last "+n+" months"],
+  [/^Mois\s+(\d{4}-\d{2})$/i,n=>"Month "+n],
+  [/^Unités?\s*:\s*(.+)$/i,v=>"Unit(s): "+v],
+  [/^Machine\s*:\s*(.+)$/i,v=>"Machine: "+v],
+  [/^Site\s*:\s*(.+)$/i,v=>"Site: "+v],
+  [/^(\d+)\s+équipements? dans le périmètre$/i,n=>n+" assets in scope"],
+  [/^Taux\s*:\s*(.+)$/i,v=>"Rate: "+v]
+];
+const reversePatterns=[
+  [/^(\d+)\s*\/\s*(\d+)\s+PM displayed$/i,(a,b)=>a+" / "+b+" PM affichée(s)"],
+  [/^(\d+)\s*\/\s*(\d+)\s+employees displayed$/i,(a,b)=>a+" / "+b+" collaborateur(s) affiché(s)"],
+  [/^(\d+)\s*\/\s*(\d+)\s+breakdowns displayed$/i,(a,b)=>a+" / "+b+" panne(s) affichée(s)"],
+  [/^(\d+)\s+employee\(s\)$/i,n=>n+" collaborateur(s)"],
+  [/^(\d+)\s+intervention\(s\)$/i,n=>n+" intervention(s)"],
+  [/^(\d+)\s+error\(s\)$/i,n=>n+" erreur(s)"],
+  [/^(\d+)\s+row\(s\)$/i,n=>n+" ligne(s)"],
+  [/^Last\s+(\d+)\s+days$/i,n=>"Derniers "+n+" jours"],
+  [/^Last\s+(\d+)\s+months$/i,n=>n+" derniers mois"],
+  [/^Month\s+(\d{4}-\d{2})$/i,n=>"Mois "+n],
+  [/^Unit\(s\):\s*(.+)$/i,v=>"Unités : "+v],
+  [/^Machine:\s*(.+)$/i,v=>"Machine : "+v],
+  [/^Site:\s*(.+)$/i,v=>"Site : "+v],
+  [/^(\d+)\s+assets in scope$/i,n=>n+" équipements dans le périmètre"],
+  [/^Rate:\s*(.+)$/i,v=>"Taux : "+v]
+];
+function translateValue(value,language){
+  const key=normalize(value);
+  if(!key)return value;
+  const mapped=language==="en"?TRANSLATIONS[key]:REVERSE.get(key);
+  if(mapped&&mapped!==key)return String(value).replace(key,mapped);
+  for(const [regex,fn] of (language==="en"?patterns:reversePatterns)){
+    const match=key.match(regex);
+    if(match)return String(value).replace(key,fn(...match.slice(1)));
+  }
+  return value;
 }
-
-export function useLanguage() {
-  const [language, setLanguage] = useState(() => {
-    const saved = localStorage.getItem("engineering_language");
-    return saved === "en" ? "en" : "fr";
+function translateDOM(root,language){
+  if(!root)return;
+  const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{
+    acceptNode(node){
+      const parent=node.parentElement;
+      if(!parent||parent.closest("script,style,textarea,[contenteditable='true'],[data-i18n-skip]"))
+        return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }
   });
-  useEffect(() => {
-    localStorage.setItem("engineering_language", language);
-    document.documentElement.lang = language;
-    document.title = language === "en" ? "Engineering · Maintenance management" : "Engineering · Gestion de maintenance";
-    const root = document.getElementById("root");
-    if (!root) return;
-    let scheduled = false;
-    const apply = () => {
-      scheduled = false;
-      translateDOM(root, language);
-    };
-    apply();
-    const observer = new MutationObserver(() => {
-      if (scheduled) return;
-      scheduled = true;
-      queueMicrotask(apply);
+  const nodes=[];
+  while(walker.nextNode())nodes.push(walker.currentNode);
+  for(const node of nodes){
+    const next=translateValue(node.nodeValue||"",language);
+    if(next!==node.nodeValue)node.nodeValue=next;
+  }
+  root.querySelectorAll("*").forEach(element=>{
+    if(element.closest("[data-i18n-skip]"))return;
+    for(const attr of ATTRS){
+      const original=element.getAttribute(attr);
+      if(!original)continue;
+      const translated=translateValue(original,language);
+      if(translated!==original)element.setAttribute(attr,translated);
+    }
+  });
+}
+export function useLanguage(){
+  const [language,setLanguage]=useState(()=>{
+    try{return localStorage.getItem("engineering_language")==="en"?"en":"fr";}catch{return "fr";}
+  });
+  useEffect(()=>{
+    try{localStorage.setItem("engineering_language",language);}catch{}
+    document.documentElement.lang=language;
+    document.title=language==="en"?"Engineering · Maintenance management":"Engineering · Gestion de maintenance";
+    const root=document.getElementById("root");
+    if(!root)return;
+    let queued=false;
+    const config={childList:true,characterData:true,attributes:true,attributeFilter:ATTRS,subtree:true};
+    const observer=new MutationObserver(()=>{
+      if(queued)return;
+      queued=true;
+      queueMicrotask(()=>{
+        queued=false;
+        observer.disconnect();
+        translateDOM(root,language);
+        observer.observe(root,config);
+      });
     });
-    // Observer uniquement les ajouts/suppressions React. La traduction modifie les textes et attributs ; les observer provoquait des rescans répétés de tout le DOM et pouvait figer Chrome.
-    observer.observe(root, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [language]);
-  return { language, setLanguage };
+    translateDOM(root,language);
+    observer.observe(root,config);
+    return ()=>observer.disconnect();
+  },[language]);
+  return {language,setLanguage};
 }
 
 export function LanguageSwitch({ language, setLanguage, className = "" }) {
