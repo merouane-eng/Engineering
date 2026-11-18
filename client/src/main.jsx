@@ -463,7 +463,7 @@ function FailureEntry({ user }) {
         <label>Début de l'intervention<input required type="datetime-local" value={draft.date_debut||""} onChange={e=>setDraft({...draft,date_debut:e.target.value})}/></label>
         <label>Fin de l'intervention<input required type="datetime-local" value={draft.date_fin||""} onChange={e=>setDraft({...draft,date_fin:e.target.value})}/></label>
         <label>Downtime <span className="fm-hint">Calcul automatique en minutes</span><input type="number" min="0" readOnly value={draft.downtime||downtime} placeholder="Calcul automatique"/></label>
-        <label>Statut<select value={draft.statut} onChange={e=>setDraft({...draft,statut:e.target.value})}><option value="Open">Open</option><option value="Close">Close</option></select></label>
+        <label>Statut<select value={draft.statut} onChange={e=>setDraft({...draft,statut:e.target.value})}>{[...new Set([...(context.statuses||["Open","Close"]),draft.statut].filter(Boolean))].map(s=><option key={s} value={s}>{s}</option>)}</select></label>
       </div><div className="fm-meta"><span>Durée calculée : <b>{downtime!==""?downtime+" min":"À déterminer"}</b></span><span>État : <b>{draft.statut==="Close"?"Clôturé":"Ouvert"}</b></span></div></section>
       <section className="fm-card"><div className="fm-head"><span className="fm-icon"><Wrench/></span><div><h3>Pièces de rechange</h3><p>Sélectionnez les pièces consommées ou ajoutez une nouvelle référence.</p></div></div>
         <div className="failurePartsToolbar"><p>Les pièces ajoutées seront associées à cet ordre de travail.</p><button className="secondary" type="button" onClick={()=>setPieceFormOpen(true)}><Plus/> Nouvelle pièce au catalogue</button></div>
