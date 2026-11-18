@@ -270,6 +270,10 @@ function translateValue(value,language){
   }
   return value;
 }
+// Preserve the original FR source per DOM node so toggling languages never
+// guesses a reverse translation (e.g. multiple French statuses -> "Closed").
+const textOrigins=new WeakMap();
+const attrOrigins=new WeakMap();
 function translateDOM(root,language){
   if(!root)return;
   const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{
@@ -283,17 +287,26 @@ function translateDOM(root,language){
   const nodes=[];
   while(walker.nextNode())nodes.push(walker.currentNode);
   for(const node of nodes){
-    const next=translateValue(node.nodeValue||"",language);
-    if(next!==node.nodeValue)node.nodeValue=next;
+    const current=node.nodeValue||"";
+    const cached=textOrigins.get(node);
+    const source=cached&&cached.rendered===current?cached.source:current;
+    const next=language==="fr"?source:translateValue(source,"en");
+    textOrigins.set(node,{source,rendered:next});
+    if(next!==current)node.nodeValue=next;
   }
   root.querySelectorAll("*").forEach(element=>{
     if(element.closest("[data-i18n-skip]"))return;
+    const cache=attrOrigins.get(element)||{};
     for(const attr of ATTRS){
       const original=element.getAttribute(attr);
       if(!original)continue;
-      const translated=translateValue(original,language);
-      if(translated!==original)element.setAttribute(attr,translated);
+      const previous=cache[attr];
+      const source=previous&&previous.rendered===original?previous.source:original;
+      const next=language==="fr"?source:translateValue(source,"en");
+      cache[attr]={source,rendered:next};
+      if(next!==original)element.setAttribute(attr,next);
     }
+    attrOrigins.set(element,cache);
   });
 }
 export function useLanguage(){
