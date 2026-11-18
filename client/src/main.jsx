@@ -881,7 +881,6 @@ function App() {
   const content = module === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : module === "stats" ? <Stats /> : module === "machines" ? <MachinePage user={user} /> : module === "saisie" ? <FailureEntry user={user} /> : module === "pm" ? <PreventiveMaintenance user={user} /> : module === "operating" ? <OperatingTime user={user} /> : module === "effectif" ? <Effectif user={user} api={api} /> :
     module === "parametres" ? <AccessSettings user={user} /> : <DataPage key={module} module={module} user={user} />;
   return <div className="appShell">
-    <LanguageSwitch language={language} setLanguage={setLanguage} className="appLanguage" />
     <aside id="engineering-sidebar" className={menuOpen ? "sidebar open" : "sidebar"}>
       <div className="brand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>GMAO · Maintenance</small></span></div>
       <nav>{modules.filter(([id]) => allowed(id)).map(([id, label, Icon]) => <button key={id} className={`moduleNav module-${id} ${module === id ? "active" : ""}`} onClick={() => { setModule(id); setMenuOpen(false); }}><span className="moduleNavIcon"><Icon /></span><span>{label}</span></button>)}</nav>
@@ -889,7 +888,7 @@ function App() {
       <div className="userBlock"><div className="avatar">{user.nom?.[0]}{user.prenom?.[0]}</div><div><strong>{user.nom} {user.prenom || ""}</strong><small>{user.role}</small></div><button title="Déconnexion" onClick={logout}><LogOut /></button></div>
     </aside>
     {menuOpen && <button className="backdrop" aria-label="Fermer" onClick={() => setMenuOpen(false)} />}
-    <main className="main"><header className="mobileTopbar"><button type="button" className="mobileMenu" aria-label="Ouvrir le menu" aria-expanded={menuOpen} aria-controls="engineering-sidebar" onClick={() => setMenuOpen(true)}><Menu /></button><div className="mobileTopbarBrand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>{modules.find(item => item[0] === module)?.[1] || "GMAO"}</small></span></div></header><div className="mainContent">{content}</div></main>
+    <main className="main"><header className="mobileTopbar"><button type="button" className="mobileMenu" aria-label="Ouvrir le menu" aria-expanded={menuOpen} aria-controls="engineering-sidebar" onClick={() => setMenuOpen(true)}><Menu /></button><div className="mobileTopbarBrand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>{modules.find(item => item[0] === module)?.[1] || "GMAO"}</small></span></div><LanguageSwitch language={language} setLanguage={setLanguage} className="appLanguage" /></header><div className="mainContent">{content}</div></main>
   </div>;
 }
 
