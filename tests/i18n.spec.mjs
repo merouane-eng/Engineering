@@ -83,8 +83,13 @@ for(const viewport of [{width:390,height:844},{width:1366,height:768}]){
   await page.getByRole("button",{name:/Add/}).click();
   await expect(page.getByText("EMPLOYEE RECORD")).toBeVisible();
   await expect(page.getByText(/Initials.*optional/i).first()).toBeVisible();
+  // Le formulaire modal bloque volontairement les clics hors de la fenêtre.
+  // Fermer le dialogue avant de changer le réglage global de langue.
+  await page.getByRole("button",{name:/Cancel/}).click();
   await choose("fr");
+  await page.getByRole("button",{name:/Ajouter/}).click();
   await expect(page.getByText("FICHE PERSONNEL")).toBeVisible();
+  await page.getByRole("button",{name:/Annuler/}).click();
   expect(errors,"Errors: "+errors.join(" | ")).toEqual([]);
   await context.close();
  });
