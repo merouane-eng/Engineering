@@ -8,6 +8,7 @@ const pm = {id:22,machine_tag:"M-001",machine_designation:"Compresseur",unite:"U
 function fixture(url) {
   const path=new URL(url).pathname;
   if(path==="/api/dashboard") return {machines:1,techniciens:1,pannesOuvertes:1,pannesFermees:0,pmProgrammee:1,pmRealisees:0,recentPannes:[panne],upcomingPM:[pm],month:"2026-11"};
+  if(path==="/api/stats/overview") return {pannes:[panne],pm:[pm],operating:[{machine:"M-001",date_jour:"2026-11-18",heures_marche:18,heures_planifiees:24,heures_arret:6}],machines:[machine],units:["U1"],scope:{electricite:false}};
   if(path==="/api/supabase/status") return {linked:true};
   if(path==="/api/modules/machines") return [machine];
   if(path==="/api/modules/effectif") return [employee];
@@ -67,6 +68,24 @@ for(const size of sizes){
           expect(modal.width).toBeLessThanOrEqual(size.width+1);
           await page.getByRole("button",{name:"Fermer"}).click();
         }
+      }
+      if(module==="stats"){
+        await expect(page.getByRole("heading",{name:/Intelligence maintenance/i})).toBeVisible();
+        await expect(page.locator(".sm-kpi")).toHaveCount(8);
+        await expect(page.locator(".sm-chartViewport svg").first()).toBeVisible();
+        await page.getByRole("tab",{name:/Fiabilité/}).click();
+        await expect(page.getByText("Fiabilité & disponibilité")).toBeVisible();
+        await page.getByRole("tab",{name:/Maintenance préventive/}).click();
+        await expect(page.getByText("Performance du préventif")).toBeVisible();
+        await page.getByRole("tab",{name:/Performance techniciens/}).click();
+        await expect(page.getByText("Activité des techniciens")).toBeVisible();
+        await page.getByRole("button",{name:/Personnaliser/}).click();
+        await expect(page.getByText("APPARENCE DU DASHBOARD")).toBeVisible();
+        await page.locator(".sm-paletteOptions button[aria-label='Royal']").click();
+        await expect(page.locator(".statsMaster")).toHaveAttribute("data-stats-palette","royal");
+        await page.locator(".sm-themeOptions button").filter({hasText:"Clair"}).click();
+        await expect(page.locator("html")).toHaveAttribute("data-theme","light");
+        await page.getByRole("button",{name:/Personnaliser/}).click();
       }
       if(module==="parametres"){
         await expect(page.getByText("Paramètres & accès")).toBeVisible();
