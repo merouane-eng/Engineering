@@ -219,6 +219,15 @@ const EN = {
 
 // All current UI strings and newer modules. Stored business values are unchanged.
 const TRANSLATIONS={...EN,...EXTRA_EN};
+const DISPLAY_FR = {
+  "Open":"Ouverte", "Close":"Clôturée", "Closed":"Clôturée",
+  "WEEKLY":"Hebdomadaire", "MONTHLY":"Mensuelle",
+  "QUARTERLY":"Trimestrielle", "HALF YEARLY":"Semestrielle",
+  "YEARLY":"Annuelle",
+  "admin":"Administrateur", "superviseur":"Superviseur", "technicien":"Technicien",
+  "Active":"Actif", "Inactive":"Inactif"
+};
+
 const REVERSE=Object.entries(TRANSLATIONS).reduce((map,[source,destination])=>{
   if(!map.has(destination))map.set(destination,source);
   return map;
@@ -290,7 +299,8 @@ function translateDOM(root,language){
     const current=node.nodeValue||"";
     const cached=textOrigins.get(node);
     const source=cached&&cached.rendered===current?cached.source:current;
-    const next=language==="fr"?source:translateValue(source,"en");
+    const key=normalize(source);
+    const next=language==="fr"?(DISPLAY_FR[key]?String(source).replace(key,DISPLAY_FR[key]):source):translateValue(source,"en");
     textOrigins.set(node,{source,rendered:next});
     if(next!==current)node.nodeValue=next;
   }
@@ -302,7 +312,8 @@ function translateDOM(root,language){
       if(!original)continue;
       const previous=cache[attr];
       const source=previous&&previous.rendered===original?previous.source:original;
-      const next=language==="fr"?source:translateValue(source,"en");
+      const key=normalize(source);
+    const next=language==="fr"?(DISPLAY_FR[key]?String(source).replace(key,DISPLAY_FR[key]):source):translateValue(source,"en");
       cache[attr]={source,rendered:next};
       if(next!==original)element.setAttribute(attr,next);
     }
