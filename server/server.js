@@ -823,7 +823,7 @@ app.get("/api/saisie/context", requireAuth, async (req, res) => {
     const technicians = req.user.role === "admin"
       ? employees.map(row => ({ name: [row.nom, row.prenom].filter(Boolean).join(" ").trim(), service: row.service || "" }))
       : [{ name: technician, service: req.user.service || "" }];
-    res.json({ units, machines, services: isElectrician(req.user) ? [req.user.service] : services, zones, technicians, technician, service: req.user.service || "" });
+    res.json({ units, machines, services: isElectrician(req.user) ? [req.user.service] : services, zones, technicians, technician, statuses: refVals("statut_panne"), service: req.user.service || "" });
   } catch (error) {
     res.status(502).json({ error: `Chargement du contexte Supabase impossible: ${error.message}` });
   }
