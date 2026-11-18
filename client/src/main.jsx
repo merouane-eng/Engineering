@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 import Effectif from "./EffectifRH.jsx";
+import DesktopSettings from "./DesktopSettings.jsx";
 import AdminExcelBar from "./AdminExcelBar.jsx";
 import { useLanguage, LanguageSwitch } from "./i18n.jsx";
 
@@ -521,6 +522,7 @@ function AccessSettings({ user }) {
           </select></td><td><button onClick={() => changePassword(row.id)}>Mot de passe</button></td></tr>;
       })}
     </tbody></table></div>
+    <DesktopSettings />
   </div>;
 }
 
