@@ -574,7 +574,33 @@ async function userUnits(user) {
     .map(row => row.unite);
 }
 
-async function remoteEffectifWithUnits() {
+
+// Isolation métier : le service est issu exclusivement du compte authentifié.
+const normService = value => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase();
+const isElectrician = user => user?.role !== "admin" && normService(user?.service)==="electricite";
+const normPerson = value => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+  .toLowerCase().replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");
+function personNames(employee) {
+  const first = String(employee.prenom || "").trim(), last = String(employee.nom || "").trim();
+  return [normPerson(first+" "+last),normPerson(last+" "+first)].filter(Boolean);
+}
+async function electricServiceNames() {
+  const employees = await supabaseRequest("effectif", { query: "?select=nom,prenom,service&order=id.asc" });
+  const byName = new Map(),electric = new Set();
+  for (const person of employees) for (const name of personNames(person)) {
+    if (!byName.has(name)) byName.set(name,new Set());
+    byName.get(name).add(normService(person.service));
+    if (normService(person.service)==="electricite") electric.add(name);
+  }
+  // Ne pas divulguer une intervention si le nom existe dans plusieurs services.
+  return new Set([...electric].filter(name=>byName.get(name)?.size===1));
+}
+const electricPanne = (row,names) => normService(row.service)==="electricite" ||
+  (normService(row.service)==="maintenance" && names.has(normPerson(row.technicien)));
+const electricPM = (row,names) => normService(row.service_intervenant)==="electricite" ||
+  (!row.service_intervenant && names.has(normPerson(row.responsable)));
+
+async function remoteEffectifWithUnits(user) {
   const [employees, associations] = await Promise.all([
     supabaseRequest("effectif", { query: "?select=*&order=nom.asc,prenom.asc" }),
     supabaseRequest("effectif_unites", { query: "?select=effectif_id,unite&order=unite.asc" })
@@ -585,7 +611,7 @@ async function remoteEffectifWithUnits() {
     if (!unitsByEmployee.has(key)) unitsByEmployee.set(key, []);
     unitsByEmployee.get(key).push(association.unite);
   }
-  return employees.map(employee => ({
+  return employees.filter(employee=>!isElectrician(user) || normService(employee.service)==="electricite").map(employee => ({
     ...employee,
     is_admin: employee.role === "admin",
     units: unitsByEmployee.get(String(employee.id)) || []
@@ -628,11 +654,17 @@ async function remoteModuleRows(module, user) {
   let rows = [];
   if (module === "liste" || module === "saisie") {
     rows = await supabaseRequest("pannes", { query: "?select=*&order=id.desc&limit=1000" });
-    return rows.filter(row => units.includes(row.unite));
+    const visible=rows.filter(row=>units.includes(row.unite));
+    if (!isElectrician(user)) return visible;
+    const names=await electricServiceNames();
+    return visible.filter(row=>electricPanne(row,names));
   }
   if (module === "pm") {
     rows = await supabaseRequest("pm_programmees", { query: "?select=*&order=date_prevue.desc&limit=1000" });
-    return rows.filter(row => units.includes(row.unite));
+    const visible=rows.filter(row=>units.includes(row.unite));
+    if (!isElectrician(user)) return visible;
+    const names=await electricServiceNames();
+    return visible.filter(row=>electricPM(row,names));
   }
   if (module === "operating") {
     const [entries, machines] = await Promise.all([
@@ -777,7 +809,7 @@ app.get("/api/saisie/context", requireAuth, async (req, res) => {
     const technicians = req.user.role === "admin"
       ? employees.map(row => ({ name: [row.nom, row.prenom].filter(Boolean).join(" ").trim(), service: row.service || "" }))
       : [{ name: technician, service: req.user.service || "" }];
-    res.json({ units, machines, services, zones, technicians, technician, service: req.user.service || "" });
+    res.json({ units, machines, services: isElectrician(req.user) ? [req.user.service] : services, zones, technicians, technician, service: req.user.service || "" });
   } catch (error) {
     res.status(502).json({ error: `Chargement du contexte Supabase impossible: ${error.message}` });
   }
@@ -947,9 +979,9 @@ app.get("/api/dashboard", requireAuth, requireModule("accueil"), async (req, res
     const units = await allowedUnitsForUser(req.user);
     const [machines, employees, pannes, pm] = await Promise.all([
       supabaseRequest("machines", { query: "?select=tag,unite,actif" }),
-      supabaseRequest("effectif", { query: "?select=id,actif" }),
-      supabaseRequest("pannes", { query: "?select=id,wo,machine,probleme,unite,statut,date_panne&order=date_panne.desc&limit=5000" }),
-      supabaseRequest("pm_programmees", { query: "?select=id,machine_tag,unite,statut,date_prevue,frequence&order=date_prevue.asc&limit=3000" })
+      supabaseRequest("effectif", { query: "?select=id,actif,service" }),
+      supabaseRequest("pannes", { query: "?select=id,wo,machine,probleme,unite,statut,date_panne,service,technicien&order=date_panne.desc&limit=5000" }),
+      supabaseRequest("pm_programmees", { query: "?select=id,machine_tag,unite,statut,date_prevue,frequence,responsable,service_intervenant&order=date_prevue.asc&limit=3000" })
     ]);
     const month = localTimestamp().slice(0, 7);
     const visibleMachines = machines.filter(row => units.includes(row.unite) && Number(row.actif) === 1);
@@ -959,8 +991,10 @@ app.get("/api/dashboard", requireAuth, requireModule("accueil"), async (req, res
       const employeeIds = new Set(associations.filter(row => units.includes(row.unite)).map(row => row.effectif_id));
       visibleEmployees = employees.filter(row => employeeIds.has(row.id));
     }
-    const panneRows = pannes.filter(row => units.includes(row.unite));
-    const pmRows = pm.filter(row => units.includes(row.unite));
+    const names=isElectrician(req.user)?await electricServiceNames():null;
+    if (names) visibleEmployees=visibleEmployees.filter(row=>normService(row.service)==="electricite");
+    const panneRows=pannes.filter(row=>units.includes(row.unite)&&(!names||electricPanne(row,names)));
+    const pmRows=pm.filter(row=>units.includes(row.unite)&&(!names||electricPM(row,names)));
     const realized = ["Réalisée", "Non conforme"];
     res.json({
       machines: visibleMachines.length,
@@ -987,7 +1021,7 @@ app.get("/api/modules/:module", requireAuth, (req, res, next) => requireModule(r
     catch (error) { return res.status(502).json({ error: `Chargement machines impossible: ${error.message}` }); }
   }
   if (module === "effectif") {
-    try { return res.json(await remoteEffectifWithUnits()); }
+    try { return res.json(await remoteEffectifWithUnits(req.user)); }
     catch (error) { return res.status(502).json({ error: `Chargement effectif impossible: ${error.message}` }); }
   }
   try {
@@ -1027,6 +1061,7 @@ app.post("/api/pm", requireAuth, async (req, res) => {
       tolerance_jours: Number(req.body.tolerance_jours || 7), date_prevue: date,
       mois: months[Number(match[2])-1] || "", annee: Number(match[1]),
       statut: "Planifiée", responsable: [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim(),
+      service_intervenant: req.user.role==="admin" ? (String(req.body.service_intervenant || "").trim() || null) : (req.user.service || null),
       commentaire: req.body.commentaire || "", motif_report: req.body.motif_report || "",
       date_creation: localTimestamp(), source: "web"
     };
@@ -1043,6 +1078,7 @@ app.post("/api/pm/:id/realiser", requireAuth, async (req, res) => {
     if (pm.statut !== "Planifiée") return res.status(400).json({ error: "Cette PM n'est pas planifiée" });
     const allowed = await allowedUnitsForUser(req.user);
     if (!allowed.includes(pm.unite)) return res.status(403).json({ error: "Unité non autorisée" });
+    if (isElectrician(req.user) && !electricPM(pm,await electricServiceNames())) return res.status(403).json({ error: "PM réservée à un autre service" });
     const startText = String(req.body.date_debut || "").replace("T", " ").slice(0,16);
     const endText = String(req.body.date_fin || "").replace("T", " ").slice(0,16);
     const start = new Date(startText.replace(" ","T")), end = new Date(endText.replace(" ","T"));
@@ -1105,17 +1141,18 @@ app.put("/api/users/:id/role", requireAuth, requireModule("parametres"), async (
   }
 });
 
-app.get("/api/effectif/context", requireAuth, requireModule("effectif"), async (_req, res) => {
+app.get("/api/effectif/context", requireAuth, requireModule("effectif"), async (req, res) => {
   try {
     const [machines, employees] = await Promise.all([
       Promise.all([supabaseRequest("machines", { query: "?select=unite&actif=eq.1" }),
                    supabaseRequest("effectif_unites", { query: "?select=unite" })]).then(parts=>parts.flat()),
       supabaseRequest("effectif", { query: "?select=service,fonction&actif=eq.true" })
     ]);
+    const scoped=isElectrician(req.user)?employees.filter(row=>normService(row.service)==="electricite"):employees;
     res.json({
       units: [...new Set([...machines.map(row => row.unite), "SG01", "SG02"].filter(Boolean))].sort(),
-      services: [...new Set(employees.map(row => row.service).filter(Boolean))].sort(),
-      functions: [...new Set(employees.map(row => row.fonction).filter(Boolean))].sort()
+      services: [...new Set(scoped.map(row => row.service).filter(Boolean))].sort(),
+      functions: [...new Set(scoped.map(row => row.fonction).filter(Boolean))].sort()
     });
   } catch (error) {
     res.status(502).json({ error: `Chargement du référentiel Supabase impossible: ${error.message}` });
@@ -1394,6 +1431,7 @@ app.put("/api/tables/pannes/:id", requireAuth, async (req, res) => {
     const allowed = await allowedUnitsForUser(req.user);
     const targetUnit = String(req.body.unite ?? panne.unite);
     if (!allowed.includes(targetUnit) || !allowed.includes(panne.unite)) return res.status(403).json({ error: "Modification non autorisée pour cette unité" });
+    if (isElectrician(req.user) && !electricPanne(panne,await electricServiceNames())) return res.status(403).json({ error: "Panne réservée à un autre service" });
     const machineTag = String(req.body.machine ?? panne.machine);
     const machine = await supabaseRequest("machines", { query: `?select=tag,unite&tag=eq.${encodeURIComponent(machineTag)}&limit=1` });
     if (!machine[0] || machine[0].unite !== targetUnit) return res.status(400).json({ error: "Machine et unité incohérentes" });
@@ -1419,6 +1457,11 @@ app.get("/api/tables/:table", requireAuth, async (req, res) => {
       return res.json(await remoteModuleRows(module, req.user));
     }
     const rows = await supabaseRequest(table, { query: "?select=*&limit=1000" });
+    if (table==="pm_realisees" && isElectrician(req.user)) {
+      const [pms,names]=await Promise.all([remoteModuleRows("pm",req.user),electricServiceNames()]);
+      const allowedIds=new Set(pms.map(pm=>String(pm.id)));
+      return res.json(rows.filter(row=>allowedIds.has(String(row.id_pm_prog)) || names.has(normPerson(row.technicien))));
+    }
     return res.json(rows);
   } catch (error) { return res.status(502).json({ error: `Lecture Supabase impossible: ${error.message}` }); }
 });
