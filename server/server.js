@@ -992,7 +992,7 @@ app.get("/api/dashboard", requireAuth, requireModule("accueil"), async (req, res
       visibleEmployees = employees.filter(row => employeeIds.has(row.id));
     }
     const names=isElectrician(req.user)?await electricServiceNames():null;
-    if (names) visibleEmployees=visibleEmployees.filter(row=>normService(row.service)==="electricite");
+    if (names) visibleEmployees=employees.filter(row=>normService(row.service)==="electricite");
     const panneRows=pannes.filter(row=>units.includes(row.unite)&&(!names||electricPanne(row,names)));
     const pmRows=pm.filter(row=>units.includes(row.unite)&&(!names||electricPM(row,names)));
     const realized = ["Réalisée", "Non conforme"];

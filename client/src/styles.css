@@ -508,3 +508,11 @@ input:focus, select:focus { border-color:#57c7ff; box-shadow:0 0 0 3px rgba(87,1
 :root[data-theme="light"] .ef-rh .ef-rhDashboardHead select{background:#fff;color:#294b68;border-color:#cedfe8}
 :root[data-theme="light"] .ef-rh .ef-rhContractItem{color:#35536b}
 :root[data-theme="light"] .ef-rh .ef-rhEvent time{color:#52738c}
+
+/* Attribution RH des PM : choix uniquement pour les administrateurs */
+.pm-serviceAssign{display:flex;align-items:center;gap:6px;min-width:180px}
+.pm-serviceAssign select{min-width:120px;max-width:180px;padding:7px 8px;border:1px solid #355774;border-radius:8px;color:#dceafa;background:#10283c;font-size:11px}
+.pm-serviceAssign button{padding:8px 9px;border:1px solid #398f8a;border-radius:7px;background:#216d68;color:#f4fffc;font-size:10px;cursor:pointer}
+.pm-electricScope{display:flex;align-items:center;gap:9px;margin:2px 0 14px;padding:12px 14px;border:1px solid #25635d;border-radius:10px;background:#0e4e4938;color:#8eead5;font-size:12px;font-weight:650}
+:root[data-theme="light"] .pm-electricScope{background:#e8f7f4;color:#225e58;border-color:#b7ddd5}
+:root[data-theme="light"] .pm-serviceAssign select{background:#fff;color:#254460;border-color:#bdd4e4}

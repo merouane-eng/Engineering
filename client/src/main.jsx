@@ -723,7 +723,7 @@ function PreventiveMaintenance({ user }) {
           <td>{row.date_prevue}</td><td>{row.unite}</td>
           <td>{row.machine_tag} — {row.machine_designation || ""}</td><td>{row.frequence}</td>
           <td>{row.responsable || "—"}</td>
-          <td>{user.role==="admin" ? <div className="pm-serviceAssign"><select aria-label={"Service de la PM "+row.id} value={serviceDrafts[row.id] ?? row.service_intervenant ?? ""} onChange={e=>setServiceDrafts(old=>({...old,[row.id]:e.target.value}))}><option value="">Non attribuée</option>{[...new Set([...servicesPM,row.service_intervenant].filter(Boolean))].map(s=><option key={s} value={s}>{s}</option>)}</select><button type="button" onClick={()=>assignService(row)} title="Enregistrer le service intervenant">Valider</button></div> : (row.service_intervenant||"Électricité")}</td><td>{row.statut}</td>
+          <td>{user.role==="admin" ? <div className="pm-serviceAssign"><select aria-label={"Service de la PM "+row.id} value={serviceDrafts[row.id] ?? row.service_intervenant ?? ""} onChange={e=>setServiceDrafts(old=>({...old,[row.id]:e.target.value}))}><option value="">Non attribuée</option>{[...new Set([...servicesPM,row.service_intervenant].filter(Boolean))].map(s=><option key={s} value={s}>{s}</option>)}</select><button type="button" onClick={()=>assignService(row)} title="Enregistrer le service intervenant">Valider</button></div> : (row.service_intervenant||"—")}</td><td>{row.statut}</td>
           <td className="actions">{row.statut === "Planifiée" &&
             <button className="primary" onClick={() => openRealization(row)}>Réaliser</button>}</td>
         </tr>)}</tbody>
