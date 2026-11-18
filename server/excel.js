@@ -182,3 +182,40 @@ export function makeXlsx(columns,rows,{name="Données",instructions=[]}={}){
   if(haveNotes)files["xl/worksheets/sheet2.xml"]=mkSheet([["Champ","Règle"],...instructions]);
   return zip(files);
 }
+
+
+/* Sauvegarde globale : un onglet par table, sans exécuter de formules. */
+export function makeMultiSheetXlsx(tabs){
+  if(!Array.isArray(tabs)||!tabs.length||tabs.length>20)
+    throw new Error("Nombre de feuilles Excel invalide.");
+  const sheetNames=new Set();
+  const entries={};
+  const workbookSheets=[],workbookRels=[],overrides=[];
+  tabs.forEach((tab,i)=>{
+    const name=String(tab.name||"Feuille "+(i+1)).slice(0,31);
+    if(sheetNames.has(name))throw new Error("Nom de feuille en double.");
+    sheetNames.add(name);
+    const head=tab.headers||[],rows=[head,...(tab.rows||[])];
+    if(head.length<1||head.length>180||rows.length>20001)
+      throw new Error("Feuille trop grande : "+name);
+    const body=rows.map((row,ri)=>'<row r="'+(ri+1)+'">'+
+      head.map((_,ci)=>{
+        const value=row[ci]===null||row[ci]===undefined?"":String(row[ci]);
+        return '<c r="'+columnRef(ci)+(ri+1)+'" t="inlineStr"><is><t xml:space="preserve">'+
+          esc(value)+'</t></is></c>';
+      }).join("")+'</row>').join("");
+    const file="xl/worksheets/sheet"+(i+1)+".xml";
+    const last=columnRef(head.length-1)+rows.length;
+    entries[file]=XML+'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+
+      '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'+
+      '<dimension ref="A1:'+last+'"/><sheetData>'+body+'</sheetData><autoFilter ref="A1:'+last+'"/></worksheet>';
+    workbookSheets.push('<sheet name="'+esc(name)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>');
+    workbookRels.push('<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>');
+    overrides.push('<Override PartName="/'+file+'" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>');
+  });
+  entries["xl/workbook.xml"]=XML+'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+workbookSheets.join("")+'</sheets></workbook>';
+  entries["xl/_rels/workbook.xml.rels"]=XML+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+workbookRels.join("")+'</Relationships>';
+  entries["[Content_Types].xml"]=XML+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+overrides.join("")+'</Types>';
+  entries["_rels/.rels"]=XML+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+  return zip(entries);
+}
