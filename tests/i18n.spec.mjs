@@ -82,7 +82,7 @@ for(const viewport of [{width:390,height:844},{width:1366,height:768}]){
   await expect(page.getByText("Workforce & human resources")).toBeVisible();
   await page.getByRole("button",{name:/Add/}).click();
   await expect(page.getByText("EMPLOYEE RECORD")).toBeVisible();
-  await expect(page.getByText("Initials",{exact:true}).first()).toBeVisible();
+  await expect(page.getByText(/Initials.*optional/i).first()).toBeVisible();
   await choose("fr");
   await expect(page.getByText("FICHE PERSONNEL")).toBeVisible();
   expect(errors,"Errors: "+errors.join(" | ")).toEqual([]);
