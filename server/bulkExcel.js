@@ -164,6 +164,7 @@ function normalizeForSave(module,row,context,existing){
     if(!machine||machine.unite!==coerce(row.unite))throw new Error("Machine inconnue ou unité incohérente.");
     const date=dateValue(row.date_prevue),tol=num(row.tolerance_jours??7);
     if(tol===null||tol<0||tol>365)throw new Error("Tolérance PM invalide.");
+    if(coerce(row.statut).toLowerCase().includes("réalis"))throw new Error("Une PM réalisée ne peut pas être importée comme PM programmée.");
     return {...common,machine_tag:coerce(row.machine_tag),machine_designation:coerce(row.machine_designation)||machine.designation,
       unite:coerce(row.unite),groupe:coerce(row.groupe)||machine.groupe||null,
       frequence:coerce(row.frequence),tolerance_jours:tol,date_prevue:date,
@@ -192,9 +193,15 @@ async function getRows(module,supabaseRequest,remoteEffectifWithUnits,user){
     return employees.map(e=>({...e,unites:(e.units||[]).join("; "),actif:e.actif?"Oui":"Non",
       toutes_unites:e.toutes_unites?"Oui":"Non"}));
   }
-  const query="?select=*&order=id.asc&limit=5000";
-  const rows=await supabaseRequest(EXCEL_MODULES[module].table,{query});
-  return rows;
+  const rows=[];
+  for(let offset=0;offset<10000;offset+=1000){
+    const page=await supabaseRequest(EXCEL_MODULES[module].table,{
+      query:"?select=*&order=id.asc&limit=1000&offset="+offset
+    });
+    rows.push(...page);
+    if(page.length<1000)return rows;
+  }
+  throw new Error("Export de plus de 10 000 lignes : contacter l'administrateur.");
 }
 function spreadsheet(module,rows,template=false) {
   const schema=EXCEL_MODULES[module];
@@ -261,7 +268,19 @@ async function parseValidated(module,encoded,deps){
 }
 export function registerExcelRoutes(app,{requireAuth,supabaseRequest,remoteEffectifWithUnits,localTimestamp}){
   // Contrôle côté serveur : le client ne peut pas débloquer ces routes.
-  const admin=(req,res,next)=>req.user.role==="admin"?next():res.status(403).json({error:"Fonction réservée aux administrateurs."});
+  const admin=async(req,res,next)=>{
+    if(req.user.role!=="admin")return res.status(403).json({error:"Fonction réservée aux administrateurs."});
+    try{
+      const id=req.user.supabase_id || req.user.id;
+      if(!id)return res.status(403).json({error:"Administrateur non vérifié."});
+      const rows=await supabaseRequest("effectif",{
+        query:"?select=id,role,actif&id=eq."+encodeURIComponent(id)+"&limit=1"
+      });
+      if(rows[0]?.role!=="admin" || rows[0]?.actif!==true)
+        return res.status(403).json({error:"Accès administrateur révoqué ou compte inactif."});
+      return next();
+    }catch(e){return res.status(503).json({error:"Vérification administrateur indisponible."});}
+  };
   app.get("/api/excel/catalogue",requireAuth,admin,(_req,res)=>{
     res.json(Object.entries(EXCEL_MODULES).map(([id,s])=>({id,label:s.title})));
   });
