@@ -882,14 +882,14 @@ function App() {
     module === "parametres" ? <AccessSettings user={user} /> : <DataPage key={module} module={module} user={user} />;
   return <div className="appShell">
     <LanguageSwitch language={language} setLanguage={setLanguage} className="appLanguage" />
-    <aside className={menuOpen ? "sidebar open" : "sidebar"}>
+    <aside id="engineering-sidebar" className={menuOpen ? "sidebar open" : "sidebar"}>
       <div className="brand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>GMAO · Maintenance</small></span></div>
       <nav>{modules.filter(([id]) => allowed(id)).map(([id, label, Icon]) => <button key={id} className={`moduleNav module-${id} ${module === id ? "active" : ""}`} onClick={() => { setModule(id); setMenuOpen(false); }}><span className="moduleNavIcon"><Icon /></span><span>{label}</span></button>)}</nav>
       <div className="themePicker" role="group" aria-label="Thème de l’application"><span className="themePickerLabel">APPARENCE</span><div className="themePickerOptions"><button type="button" className={theme === "dark" ? "selected" : ""} aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}><Moon /> Sombre</button><button type="button" className={theme === "light" ? "selected" : ""} aria-pressed={theme === "light"} onClick={() => setTheme("light")}><Sun /> Clair</button></div></div>
       <div className="userBlock"><div className="avatar">{user.nom?.[0]}{user.prenom?.[0]}</div><div><strong>{user.nom} {user.prenom || ""}</strong><small>{user.role}</small></div><button title="Déconnexion" onClick={logout}><LogOut /></button></div>
     </aside>
     {menuOpen && <button className="backdrop" aria-label="Fermer" onClick={() => setMenuOpen(false)} />}
-    <main className="main"><button className="mobileMenu" onClick={() => setMenuOpen(true)}><Menu /></button>{content}</main>
+    <main className="main"><header className="mobileTopbar"><button type="button" className="mobileMenu" aria-label="Ouvrir le menu" aria-expanded={menuOpen} aria-controls="engineering-sidebar" onClick={() => setMenuOpen(true)}><Menu /></button><div className="mobileTopbarBrand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>{modules.find(item => item[0] === module)?.[1] || "GMAO"}</small></span></div></header><div className="mainContent">{content}</div></main>
   </div>;
 }
 
