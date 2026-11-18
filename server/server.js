@@ -6,6 +6,7 @@ import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import { registerExcelRoutes } from "./bulkExcel.js";
+import { readAllSupabase } from "./paginatedSupabase.js";
 import { createSettingsHandlers } from "./desktopSettings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -51,34 +52,7 @@ async function supabaseRequest(table, options = {}) {
 }
 
 
-/**
- * Supabase PostgREST limite chaque réponse à 1000 lignes par défaut.
- * Lecture exhaustive par lots de 500, sans écriture ni modification des données.
- * Les ordres stables évitent les trous lors d'une pagination sur dates identiques.
- * Par sécurité, on signale une erreur au lieu de fournir silencieusement un
- * historique tronqué au-delà du plafond de sécurité.
- */
-async function supabaseReadAll(table, query = "?select=*&order=id.desc") {
-  const pageSize = 500;
-  const maxRows = 50000;
-  const params = new URLSearchParams(String(query).replace(/^\?/, ""));
-  params.delete("limit");
-  params.delete("offset");
-  const originalOrder = params.get("order");
-  if (!originalOrder) params.set("order", "id.desc");
-  else if (!/(^|,)id\.(asc|desc)(,|$)/.test(originalOrder))
-    params.set("order", originalOrder + ",id.desc");
-  const rows = [];
-  for (let offset = 0; offset < maxRows; offset += pageSize) {
-    params.set("limit", String(pageSize));
-    params.set("offset", String(offset));
-    const batch = await supabaseRequest(table, {query: "?" + params.toString()});
-    if (!Array.isArray(batch)) throw new Error("Réponse Supabase inattendue pour " + table);
-    rows.push(...batch);
-    if (batch.length < pageSize) return rows;
-  }
-  throw new Error("Historique de " + table + " supérieur à " + maxRows + " lignes : pagination côté écran nécessaire.");
-}
+const supabaseReadAll=(table,query)=>readAllSupabase(supabaseRequest,table,query);
 
 const SUPABASE_TABLES = {
   machines: "machines",
