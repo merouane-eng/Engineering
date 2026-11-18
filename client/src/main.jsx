@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 import Effectif from "./EffectifRH.jsx";
+import AdminExcelBar from "./AdminExcelBar.jsx";
 import { useLanguage, LanguageSwitch } from "./i18n.jsx";
 
 const modules = [
@@ -874,6 +875,7 @@ function App() {
   const [user, setUser] = useState(saved ? JSON.parse(saved) : null);
   const [module, setModule] = useState("accueil");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [excelRefreshKey,setExcelRefreshKey] = useState(0);
   const login = value => { localStorage.setItem("engineering_user", JSON.stringify(value)); setUser(value); };
   const logout = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch {} localStorage.removeItem("engineering_token"); localStorage.removeItem("engineering_user"); setUser(null); };
   if (!user) return <Login onLogin={login} language={language} setLanguage={setLanguage} />;
@@ -888,7 +890,7 @@ function App() {
       <div className="userBlock"><div className="avatar">{user.nom?.[0]}{user.prenom?.[0]}</div><div><strong>{user.nom} {user.prenom || ""}</strong><small>{user.role}</small></div><button title="Déconnexion" onClick={logout}><LogOut /></button></div>
     </aside>
     {menuOpen && <button className="backdrop" aria-label="Fermer" onClick={() => setMenuOpen(false)} />}
-    <main className="main"><header className="mobileTopbar"><button type="button" className="mobileMenu" aria-label="Ouvrir le menu" aria-expanded={menuOpen} aria-controls="engineering-sidebar" onClick={() => setMenuOpen(true)}><Menu /></button><div className="mobileTopbarBrand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>{modules.find(item => item[0] === module)?.[1] || "GMAO"}</small></span></div><LanguageSwitch language={language} setLanguage={setLanguage} className="appLanguage" /></header><div className="mainContent">{content}</div></main>
+    <main className="main"><header className="mobileTopbar"><button type="button" className="mobileMenu" aria-label="Ouvrir le menu" aria-expanded={menuOpen} aria-controls="engineering-sidebar" onClick={() => setMenuOpen(true)}><Menu /></button><div className="mobileTopbarBrand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>{modules.find(item => item[0] === module)?.[1] || "GMAO"}</small></span></div><LanguageSwitch language={language} setLanguage={setLanguage} className="appLanguage" /></header><div className="mainContent">{user.role === "admin" && <AdminExcelBar module={module} onSuccess={()=>setExcelRefreshKey(x=>x+1)} />}<div key={excelRefreshKey}>{content}</div></div></main>
   </div>;
 }
 
