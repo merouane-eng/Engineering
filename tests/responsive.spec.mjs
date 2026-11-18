@@ -38,8 +38,14 @@ for(const size of sizes){
     await expect(page.locator(".mobileTopbar")).toBeVisible();
     const ids=["accueil","machines","effectif","saisie","liste","pm","operating","stats","parametres"];
     for(const module of ids){
-      if(size.width<=800) await page.locator(".mobileMenu").click();
-      await page.locator("aside button.module-"+module).click();
+      const info=await page.evaluate((name)=>{
+        const menu=document.querySelector(".mobileMenu"),btn=document.querySelector("aside button.module-"+name),aside=document.querySelector("aside.sidebar");
+        const box=el=>el?(()=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return {x:r.x,y:r.y,w:r.width,h:r.height,display:s.display,visibility:s.visibility,transform:s.transform,pointer:s.pointerEvents}})():null;
+        return {module:name,menu:box(menu),button:box(btn),aside:box(aside),navCount:document.querySelectorAll("aside button.moduleNav").length};
+      },module);
+      console.log("UI DEBUG",size.name,JSON.stringify(info));
+      if(size.width<=800) await page.locator(".mobileMenu").click({timeout:4500});
+      await page.locator("aside button.module-"+module).click({timeout:4500});
       await page.waitForTimeout(130);
       await expect(page.locator(".mainContent")).toBeVisible();
       const dims=await page.evaluate(()=>{
