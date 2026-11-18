@@ -50,6 +50,36 @@ async function supabaseRequest(table, options = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+
+/**
+ * Supabase PostgREST limite chaque réponse à 1000 lignes par défaut.
+ * Lecture exhaustive par lots de 500, sans écriture ni modification des données.
+ * Les ordres stables évitent les trous lors d'une pagination sur dates identiques.
+ * Par sécurité, on signale une erreur au lieu de fournir silencieusement un
+ * historique tronqué au-delà du plafond de sécurité.
+ */
+async function supabaseReadAll(table, query = "?select=*&order=id.desc") {
+  const pageSize = 500;
+  const maxRows = 50000;
+  const params = new URLSearchParams(String(query).replace(/^\?/, ""));
+  params.delete("limit");
+  params.delete("offset");
+  const originalOrder = params.get("order");
+  if (!originalOrder) params.set("order", "id.desc");
+  else if (!/(^|,)id\.(asc|desc)(,|$)/.test(originalOrder))
+    params.set("order", originalOrder + ",id.desc");
+  const rows = [];
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    params.set("limit", String(pageSize));
+    params.set("offset", String(offset));
+    const batch = await supabaseRequest(table, {query: "?" + params.toString()});
+    if (!Array.isArray(batch)) throw new Error("Réponse Supabase inattendue pour " + table);
+    rows.push(...batch);
+    if (batch.length < pageSize) return rows;
+  }
+  throw new Error("Historique de " + table + " supérieur à " + maxRows + " lignes : pagination côté écran nécessaire.");
+}
+
 const SUPABASE_TABLES = {
   machines: "machines",
   techniciens: "effectif",
@@ -654,14 +684,14 @@ async function remoteModuleRows(module, user) {
   const units = await allowedUnitsForUser(user);
   let rows = [];
   if (module === "liste" || module === "saisie") {
-    rows = await supabaseRequest("pannes", { query: "?select=*&order=id.desc&limit=5000" });
+    rows = await supabaseReadAll("pannes", "?select=*&order=id.desc");
     const visible=rows.filter(row=>units.includes(row.unite));
     if (!isElectrician(user)) return visible;
     const names=await electricServiceNames();
     return visible.filter(row=>electricPanne(row,names));
   }
   if (module === "pm") {
-    rows = await supabaseRequest("pm_programmees", { query: "?select=*&order=date_prevue.desc&limit=5000" });
+    rows = await supabaseReadAll("pm_programmees", "?select=*&order=date_prevue.desc,id.desc");
     const visible=rows.filter(row=>units.includes(row.unite));
     if (!isElectrician(user)) return visible;
     const names=await electricServiceNames();
@@ -669,8 +699,8 @@ async function remoteModuleRows(module, user) {
   }
   if (module === "operating") {
     const [entries, machines] = await Promise.all([
-      supabaseRequest("operating_time", { query: "?select=*&order=date_jour.desc&limit=2000" }),
-      supabaseRequest("machines", { query: "?select=tag,unite" })
+      supabaseReadAll("operating_time", "?select=*&order=date_jour.desc,id.desc"),
+      supabaseReadAll("machines", "?select=id,tag,unite&order=id.asc")
     ]);
     const unitByTag = new Map(machines.map(machine => [machine.tag, machine.unite]));
     return entries.filter(row => units.includes(unitByTag.get(row.machine)));
@@ -999,7 +1029,7 @@ app.get("/api/stats/overview", requireAuth, requireModule("stats"), async (req,r
       remoteModuleRows("liste",req.user),
       remoteModuleRows("pm",req.user),
       remoteModuleRows("operating",req.user),
-      supabaseRequest("machines",{query:"?select=tag,designation,unite,groupe,zone,actif&order=tag.asc&limit=5000"})
+      supabaseReadAll("machines", "?select=id,tag,designation,unite,groupe,zone,actif&order=tag.asc,id.asc")
     ]);
     const allowed=new Set(units);
     // Le périmètre d'un électricien s'applique aux WO/PM avant la consolidation.
@@ -1036,8 +1066,8 @@ app.get("/api/dashboard", requireAuth, requireModule("accueil"), async (req, res
     const [machines, employees, pannes, pm] = await Promise.all([
       supabaseRequest("machines", { query: "?select=tag,unite,actif" }),
       supabaseRequest("effectif", { query: "?select=id,actif,service" }),
-      supabaseRequest("pannes", { query: "?select=id,wo,machine,probleme,unite,statut,date_panne,service,technicien&order=date_panne.desc&limit=5000" }),
-      supabaseRequest("pm_programmees", { query: "?select=id,machine_tag,unite,statut,date_prevue,frequence,responsable,service_intervenant&order=date_prevue.asc&limit=3000" })
+      supabaseReadAll("pannes", "?select=id,wo,machine,probleme,unite,statut,date_panne,service,technicien&order=date_panne.desc,id.desc"),
+      supabaseReadAll("pm_programmees", "?select=id,machine_tag,unite,statut,date_prevue,frequence,responsable,service_intervenant&order=date_prevue.asc,id.asc")
     ]);
     const month = localTimestamp().slice(0, 7);
     const visibleMachines = machines.filter(row => units.includes(row.unite) && Number(row.actif) === 1);
@@ -1073,7 +1103,7 @@ app.get("/api/dashboard", requireAuth, requireModule("accueil"), async (req, res
 app.get("/api/modules/:module", requireAuth, (req, res, next) => requireModule(req.params.module)(req, res, next), async (req, res) => {
   const module = req.params.module;
   if (module === "machines") {
-    try { return res.json(await supabaseRequest("machines", { query: "?select=*&order=tag.asc" })); }
+    try { return res.json(await supabaseReadAll("machines", "?select=*&order=tag.asc,id.asc")); }
     catch (error) { return res.status(502).json({ error: `Chargement machines impossible: ${error.message}` }); }
   }
   if (module === "effectif") {
@@ -1534,7 +1564,7 @@ app.get("/api/tables/:table", requireAuth, async (req, res) => {
       const module = ({pannes:"liste",pm_programmees:"pm",operating_time:"operating",sop:"sop"})[table];
       return res.json(await remoteModuleRows(module, req.user));
     }
-    const rows = await supabaseRequest(table, { query: "?select=*&limit=5000" });
+    const rows = await supabaseReadAll(table, "?select=*&order=id.desc");
     if (table==="pm_realisees" && isElectrician(req.user)) {
       const [pms,names]=await Promise.all([remoteModuleRows("pm",req.user),electricServiceNames()]);
       const allowedIds=new Set(pms.map(pm=>String(pm.id)));
