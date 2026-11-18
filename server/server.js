@@ -990,6 +990,46 @@ app.post("/api/pieces/:id/machines", requireAuth, async (req, res) => {
 
 
 
+// Tableau statistique unique : mêmes restrictions d'unités et métier que les modules.
+// Aucun rôle ne peut élargir son périmètre via des paramètres de requête.
+app.get("/api/stats/overview", requireAuth, requireModule("stats"), async (req,res)=>{
+  try{
+    const [units,pannes,pm,operating,machines]=await Promise.all([
+      allowedUnitsForUser(req.user),
+      remoteModuleRows("liste",req.user),
+      remoteModuleRows("pm",req.user),
+      remoteModuleRows("operating",req.user),
+      supabaseRequest("machines",{query:"?select=tag,designation,unite,groupe,zone,actif&order=tag.asc&limit=5000"})
+    ]);
+    const allowed=new Set(units);
+    // Le périmètre d'un électricien s'applique aux WO/PM avant la consolidation.
+    // Les relevés Operating Time concernent l'utilisation physique de la machine.
+    const assets=machines.filter(m=>allowed.has(m.unite));
+    const tags=new Set(assets.map(m=>m.tag));
+    const safeOperating=operating.filter(o=>tags.has(o.machine));
+    return res.json({
+      pannes:pannes.map(p=>({
+        id:p.id,wo:p.wo,machine:p.machine,unite:p.unite,service:p.service,
+        date_panne:p.date_panne,statut:p.statut,downtime:p.downtime,
+        technicien:p.technicien,probleme:p.probleme
+      })),
+      pm:pm.map(p=>({
+        id:p.id,machine_tag:p.machine_tag,unite:p.unite,date_prevue:p.date_prevue,
+        statut:p.statut,frequence:p.frequence,service_intervenant:p.service_intervenant
+      })),
+      operating:safeOperating.map(o=>({
+        machine:o.machine,date_jour:o.date_jour,heures_marche:o.heures_marche,
+        heures_planifiees:o.heures_planifiees,heures_arret:o.heures_arret
+      })),
+      machines:assets,
+      units:[...allowed].sort((a,b)=>a.localeCompare(b,"fr")),
+      scope:{electricite:isElectrician(req.user),site:"Unités autorisées"}
+    });
+  }catch(err){
+    return res.status(502).json({error:"Statistiques : "+String(err.message||"Données indisponibles")});
+  }
+});
+
 app.get("/api/dashboard", requireAuth, requireModule("accueil"), async (req, res) => {
   try {
     const units = await allowedUnitsForUser(req.user);
