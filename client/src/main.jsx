@@ -8,6 +8,7 @@ import {
   Filter, TrendingUp, BarChart3, PieChart, Layers, MapPin, Boxes, RotateCcw, Sun, Moon
 } from "lucide-react";
 import "./styles.css";
+import Effectif from "./EffectifRH.jsx";
 import { useLanguage, LanguageSwitch } from "./i18n.jsx";
 
 const modules = [
@@ -522,7 +523,7 @@ function AccessSettings({ user }) {
   </div>;
 }
 
-function Effectif({ user }) {
+function EffectifAncien({ user }) {
   const [rows, setRows] = useState([]);
   const [context, setContext] = useState({ units: [], services: [], functions: [] });
   const [form, setForm] = useState(null), [query, setQuery] = useState(""), [error, setError] = useState("");
