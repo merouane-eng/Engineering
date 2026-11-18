@@ -104,7 +104,7 @@ export default function DesktopSettings(){
    <div className="ds-icon"><SlidersHorizontal size={23}/></div>
    <div><span className="ds-eyebrow">CONFIGURATION CENTRALISÉE · ADMINISTRATEURS</span>
     <h2>Paramètres de l'application</h2>
-    <p>Listes de référence communes à Engineering PC et Engineering Mobile.</p></div>
+    <p>Référentiels repris du desktop et centralisés dans Supabase pour Engineering Mobile.</p></div>
    <span className="ds-guard"><ShieldCheck size={15}/> Accès admin</span>
   </header>
   <div className="ds-kpis">
