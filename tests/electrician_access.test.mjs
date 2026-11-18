@@ -30,6 +30,8 @@ const pm=[
   {id:15,unite:"U2",service_intervenant:"Électricité"}
 ];
 const ctx=createContext({
+  // The VM test isolates the access rules; pagination itself is tested in pagination.test.mjs.
+  supabaseReadAll:async table=>({pannes,pm_programmees:pm,machines:[]}[table]||[]),
   supabaseRequest:async table=>({
     effectif:employees,effectif_unites:[{effectif_id:"e1",unite:"U1"},{effectif_id:"e2",unite:"U1"}],
     pannes,pm_programmees:pm
