@@ -6,6 +6,7 @@ import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import { registerExcelRoutes } from "./bulkExcel.js";
+import { createSettingsHandlers } from "./desktopSettings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -795,17 +796,19 @@ app.get("/api/me", requireAuth, (req, res) => res.json(req.user));
 
 app.get("/api/saisie/context", requireAuth, async (req, res) => {
   try {
-    const [units, allMachines, employees] = await Promise.all([
+    const [units, allMachines, employees, references] = await Promise.all([
       allowedUnitsForUser(req.user),
       supabaseRequest("machines", { query: "?select=id,tag,designation,unite,zone&actif=eq.1&order=unite.asc,tag.asc" }),
-      supabaseRequest("effectif", { query: "?select=nom,prenom,service,actif&actif=eq.true&order=nom.asc,prenom.asc" })
+      supabaseRequest("effectif", { query: "?select=nom,prenom,service,actif&actif=eq.true&order=nom.asc,prenom.asc" }),
+      desktopSettings.list()
     ]);
     const machines = allMachines.filter(row =>
       (req.user.role === "admin" || req.user.toutes_unites || units.includes(row.unite))
     );
     const technician = [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim();
-    const services = [...new Set(employees.map(row => row.service).filter(Boolean))].sort();
-    const zones = [...new Set(machines.map(row => String(row.zone || "").trim()).filter(Boolean))].sort();
+    const refVals=type=>references.filter(r=>r.actif&&r.type_liste===type).map(r=>r.valeur);
+    const services = [...new Set([...refVals("service"),...employees.map(row => row.service)].filter(Boolean))].sort();
+    const zones = [...new Set([...refVals("zone"),...machines.map(row => String(row.zone || "").trim())].filter(Boolean))].sort();
     const technicians = req.user.role === "admin"
       ? employees.map(row => ({ name: [row.nom, row.prenom].filter(Boolean).join(" ").trim(), service: row.service || "" }))
       : [{ name: technician, service: req.user.service || "" }];
@@ -819,11 +822,12 @@ app.get("/api/saisie/context", requireAuth, async (req, res) => {
 
 app.get("/api/pm/context", requireAuth, async (req, res) => {
   try {
-    const [units, allMachines, employees, programmes] = await Promise.all([
+    const [units, allMachines, employees, programmes, references] = await Promise.all([
       userUnits(req.user),
       supabaseRequest("machines", { query: "?select=id,tag,designation,unite&actif=eq.1&order=unite.asc,tag.asc" }),
       supabaseRequest("effectif", { query: "?select=id,nom,prenom,service,actif&actif=eq.true&order=nom.asc,prenom.asc" }),
-      supabaseRequest("pm_programmees", { query: "?select=frequence" })
+      supabaseRequest("pm_programmees", { query: "?select=frequence" }),
+      desktopSettings.list()
     ]);
     const machines = allMachines.filter(row => req.user.role === "admin" || req.user.toutes_unites || units.includes(row.unite));
     const technician = [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim();
@@ -832,8 +836,8 @@ app.get("/api/pm/context", requireAuth, async (req, res) => {
       technicians: req.user.role === "admin"
         ? employees.map(row => ({ id: row.id, name: [row.nom, row.prenom].filter(Boolean).join(" ").trim() }))
         : [{ id: req.user.id, name: technician }],
-      frequencies: [...new Set(programmes.map(row => row.frequence).filter(Boolean))].sort(),
-      services: req.user.role==="admin" ? [...new Set(employees.map(row=>row.service).filter(Boolean))].sort() : [req.user.service].filter(Boolean)
+      frequencies: [...new Set([...references.filter(r=>r.type_liste==="frequence_pm"&&r.actif).map(r=>r.valeur),...programmes.map(row => row.frequence)].filter(Boolean))].sort(),
+      services: req.user.role==="admin" ? [...new Set([...references.filter(r=>r.type_liste==="service"&&r.actif).map(r=>r.valeur),...employees.map(row=>row.service)].filter(Boolean))].sort() : [req.user.service].filter(Boolean)
     });
   } catch (error) {
     res.status(502).json({ error: `Chargement du contexte Supabase impossible: ${error.message}` });
@@ -1161,16 +1165,17 @@ app.put("/api/users/:id/role", requireAuth, requireModule("parametres"), async (
 
 app.get("/api/effectif/context", requireAuth, requireModule("effectif"), async (req, res) => {
   try {
-    const [machines, employees] = await Promise.all([
+    const [machines, employees, references] = await Promise.all([
       Promise.all([supabaseRequest("machines", { query: "?select=unite&actif=eq.1" }),
                    supabaseRequest("effectif_unites", { query: "?select=unite" })]).then(parts=>parts.flat()),
-      supabaseRequest("effectif", { query: "?select=service,fonction&actif=eq.true" })
+      supabaseRequest("effectif", { query: "?select=service,fonction&actif=eq.true" }),
+      desktopSettings.list()
     ]);
     const scoped=isElectrician(req.user)?employees.filter(row=>normService(row.service)==="electricite"):employees;
     res.json({
-      units: [...new Set([...machines.map(row => row.unite), "SG01", "SG02"].filter(Boolean))].sort(),
-      services: [...new Set(scoped.map(row => row.service).filter(Boolean))].sort(),
-      functions: [...new Set(scoped.map(row => row.fonction).filter(Boolean))].sort()
+      units: [...new Set([...machines.map(row => row.unite),...references.filter(r=>r.type_liste==="unite"&&r.actif).map(r=>r.valeur),"SG01","SG02"].filter(Boolean))].sort(),
+      services: [...new Set([...(!isElectrician(req.user)?references.filter(r=>r.type_liste==="service"&&r.actif).map(r=>r.valeur):[]),...scoped.map(row => row.service)].filter(Boolean))].sort(),
+      functions: [...new Set([...(!isElectrician(req.user)?references.filter(r=>r.type_liste==="fonction"&&r.actif).map(r=>r.valeur):[]),...scoped.map(row => row.fonction)].filter(Boolean))].sort()
     });
   } catch (error) {
     res.status(502).json({ error: `Chargement du référentiel Supabase impossible: ${error.message}` });
@@ -1542,6 +1547,8 @@ app.delete("/api/tables/:table/:id", requireAuth, async (req, res) => {
 
 
 registerExcelRoutes(app,{requireAuth,supabaseRequest,remoteEffectifWithUnits,localTimestamp});
+const desktopSettings=createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits});
+desktopSettings.register(app,requireAuth);
 
 const clientDist = path.resolve(__dirname, "../client/dist");
 app.use(express.static(clientDist));
