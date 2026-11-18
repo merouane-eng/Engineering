@@ -9,12 +9,11 @@ import {
 import "./statsMaster.css";
 
 const empty={pannes:[],pm:[],operating:[],machines:[],units:[],scope:{}};
-const fr=new Intl.NumberFormat("fr-FR",{maximumFractionDigits:1});
-const number=v=>fr.format(Number(v)||0);
+const number=v=>new Intl.NumberFormat(localStorage.getItem("engineering_language")==="en"?"en-GB":"fr-FR",{maximumFractionDigits:1}).format(Number(v)||0);
 const n=v=>{const x=Number(v);return Number.isFinite(x)?Math.max(0,x):0};
 const iso=v=>String(v||"").slice(0,10);
 const dateOK=d=>/^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d+"T12:00:00Z"));
-const dateFR=d=>dateOK(iso(d))?new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(iso(d)+"T12:00:00Z")):"—";
+const dateFR=(d,lang="fr")=>dateOK(iso(d))?new Intl.DateTimeFormat(lang==="en"?"en-GB":"fr-FR",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(iso(d)+"T12:00:00Z")):"—";
 const norm=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 const isClosed=p=>["close","closed","cloture","cloturee","termine","terminee"].includes(norm(p.statut));
 const isPMDone=p=>["realisee","realise","non conforme"].includes(norm(p.statut));
@@ -39,10 +38,10 @@ function linePath(values,width=600,height=172){
   return [x,y];
  });
 }
-const monthsFor=(latest,months=12)=>Array.from({length:months},(_,i)=>{
+const monthsFor=(latest,months=12,lang="fr")=>Array.from({length:months},(_,i)=>{
  const date=new Date(latest.getFullYear(),latest.getMonth()-(months-1-i),1);
  return {key:date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0"),
-   label:new Intl.DateTimeFormat("fr",{month:"short"}).format(date),year:date.getFullYear()};
+   label:new Intl.DateTimeFormat(lang==="en"?"en-GB":"fr-FR",{month:"short"}).format(date),year:date.getFullYear()};
 });
 function Panel({eyebrow,title,subtitle,icon:Icon,children,extra,className=""}){
  return <article className={"sm-panel "+className}>
@@ -114,7 +113,7 @@ function GaugeRing({value,label,unit="%",tone="green"}){
  const percent=value===null?0:Math.max(0,Math.min(100,value));
  return <div className={"sm-ring sm-ring-"+tone} style={{"--pct":percent+"%"}}><div><strong>{value===null?"—":number(value)+unit}</strong><small>{label}</small></div></div>;
 }
-function statsReducer(data,site,unit,machine,period,month,now){
+function statsReducer(data,site,unit,machine,period,month,now,lang="fr"){
  const assets=data.machines.filter(r=>(!site||unitSite(r.unite)===site)&&(!unit||r.unite===unit)&&(!machine||r.tag===machine));
  const tags=new Set(assets.map(r=>r.tag));
  // Inclure les interventions de services généraux sans machine de production,
@@ -156,7 +155,7 @@ function statsReducer(data,site,unit,machine,period,month,now){
  const technicians=[...techMap.values()].sort((a,b)=>b.count-a.count).slice(0,8);
  const byUnit=unique([...ps.map(p=>p.unite),...pm.map(p=>p.unite)]).map(u=>({name:u,value:ps.filter(p=>p.unite===u).length,pm:pm.filter(p=>p.unite===u).length}));
  const endMonth=new Date(now.getFullYear(),now.getMonth(),1);
- const buckets=monthsFor(endMonth,12);
+ const buckets=monthsFor(endMonth,12,lang);
  const series={
   pannes:buckets.map(m=>ps.filter(p=>iso(p.date_panne).startsWith(m.key)).length),
   pm:buckets.map(m=>pm.filter(p=>iso(p.date_prevue).startsWith(m.key)).length),
@@ -188,7 +187,7 @@ function ThemeControls({theme,onThemeChange,palette,setPalette,compact,setCompac
   </div>}
  </div>;
 }
-export default function StatsMaster({theme="dark",onThemeChange=()=>{}}){
+export default function StatsMaster({theme="dark",onThemeChange=()=>{},language="fr"}){
  const [data,setData]=useState(empty),[loading,setLoading]=useState(true),[error,setError]=useState("");
  const [period,setPeriod]=useState("365"),[site,setSite]=useState(""),[unit,setUnit]=useState(""),[machine,setMachine]=useState(""),[month,setMonth]=useState("");
  const [tab,setTab]=useState("overview"),[graphMode,setGraphMode]=useState("line");
@@ -211,7 +210,7 @@ export default function StatsMaster({theme="dark",onThemeChange=()=>{}}){
  const siteOptions=["Site 01","Site 02"];
  const units=useMemo(()=>unique(data.units.filter(u=>!site||unitSite(u)===site)),[data.units,site]);
  const machines=useMemo(()=>data.machines.filter(m=>(!site||unitSite(m.unite)===site)&&(!unit||m.unite===unit)).sort((a,b)=>String(a.tag).localeCompare(String(b.tag),"fr")),[data.machines,site,unit]);
- const stats=useMemo(()=>statsReducer(data,site,unit,machine,period,month,today),[data,site,unit,machine,period,month,today]);
+ const stats=useMemo(()=>statsReducer(data,site,unit,machine,period,month,today,language),[data,site,unit,machine,period,month,today,language]);
  const reset=()=>{setPeriod("365");setSite("");setUnit("");setMachine("");setMonth("")};
  const mOptions=useMemo(()=>unique([...data.pannes.map(p=>iso(p.date_panne).slice(0,7)),...data.pm.map(p=>iso(p.date_prevue).slice(0,7))].filter(x=>/^\d{4}-\d{2}$/.test(x))).reverse(),[data]);
  const exportReport=()=>{
@@ -230,7 +229,7 @@ export default function StatsMaster({theme="dark",onThemeChange=()=>{}}){
    <div className="sm-heroMain"><div className="sm-kicker"><span className="sm-liveDot"/> ENGINEERING ANALYTICS <span className="sm-separator"/> COMMAND CENTER</div>
      <h1>Intelligence <em>maintenance</em></h1>
      <p>Pilotez la fiabilité, la disponibilité et la performance de votre parc industriel depuis un seul espace.</p>
-     <div className="sm-heroPills"><span><Activity size={14}/> Données réelles</span><span><CalendarDays size={14}/> {dateFR(today.toISOString())}</span>
+     <div className="sm-heroPills"><span><Activity size={14}/> Données réelles</span><span><CalendarDays size={14}/> {dateFR(today.toISOString(),language)}</span>
        <span><ShieldCheck size={14}/> {data.scope.electricite?"Périmètre Électricité":"Périmètre autorisé"}</span></div></div>
    <div className="sm-heroVisual" aria-hidden="true"><div className="sm-orbit sm-orbit1"/><div className="sm-orbit sm-orbit2"/><ChartNoAxesCombined size={84}/><div className="sm-visualTag">ANALYSE • PERFORMANCE</div></div>
   </section>
@@ -325,7 +324,7 @@ export default function StatsMaster({theme="dark",onThemeChange=()=>{}}){
       <Ranking items={[...stats.byUnit].sort((a,b)=>b.pm-a.pm).filter(x=>x.pm).slice(0,8).map(x=>({name:x.name,value:x.pm}))} suffix="PM"/></Panel>
     <Panel eyebrow="À SURVEILLER" title="Prochaines échéances en retard" icon={CalendarClock} className="sm-wide">
       <div className="sm-overdueList">{stats.overdue.length?[...stats.overdue].sort((a,b)=>iso(a.date_prevue).localeCompare(iso(b.date_prevue))).slice(0,12).map(p=><div key={p.id}>
-       <span className="sm-overdueTag">RETARD</span><strong>{p.machine_tag||"Machine non renseignée"}</strong><span>{p.unite||"—"}</span><time>{dateFR(p.date_prevue)}</time></div>):
+       <span className="sm-overdueTag">RETARD</span><strong>{p.machine_tag||"Machine non renseignée"}</strong><span>{p.unite||"—"}</span><time>{dateFR(p.date_prevue,language)}</time></div>):
        <div className="sm-noData"><CheckCircle2 size={20}/>Aucune échéance PM en retard dans ce périmètre.</div>}</div></Panel>
    </div>
   </>}

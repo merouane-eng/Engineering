@@ -14,6 +14,8 @@ import DesktopSettings from "./DesktopSettings.jsx";
 import AdminExcelBar from "./AdminExcelBar.jsx";
 import { useLanguage, LanguageSwitch } from "./i18n.jsx";
 
+const languageForUI=()=>localStorage.getItem("engineering_language")==="en"?"en-GB":"fr-FR";
+
 const modules = [
   ["accueil", "Accueil", LayoutDashboard],
   ["machines", "Machines", Wrench],
@@ -139,8 +141,8 @@ function Dashboard({ user, onNavigate }) {
   const [data,setData] = useState(null), [cloud,setCloud] = useState(null), [loading,setLoading] = useState(true), [error,setError] = useState("");
   const load = async () => { setLoading(true); setError(""); try { const r = await Promise.all([api("/api/dashboard"),api("/api/supabase/status").catch(() => ({linked:false}))]); setData(r[0]); setCloud(r[1]); } catch(e) { setError(e.message || "Chargement impossible"); } finally { setLoading(false); } };
   useEffect(() => { load(); }, []);
-  const dateLabel = new Intl.DateTimeFormat("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());
-  const formatDate = value => { if(!value) return "—"; const d=new Date(value); return Number.isNaN(d.getTime())?value:new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"short"}).format(d); };
+  const dateLabel = new Intl.DateTimeFormat(languageForUI(),{weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());
+  const formatDate = value => { if(!value) return "—"; const d=new Date(value); return Number.isNaN(d.getTime())?value:new Intl.DateTimeFormat(languageForUI(),{day:"2-digit",month:"short"}).format(d); };
   const cards = [["Machines en service",data?.machines,Wrench,"blue","Parc autorisé"],["Techniciens actifs",data?.techniciens,Users,"violet","Effectif disponible"],["Pannes ouvertes",data?.pannesOuvertes,CircleAlert,"orange","À traiter"],["Pannes clôturées",data?.pannesFermees,CheckCircle2,"green","Ce mois-ci"],["PM à réaliser",data?.pmProgrammee,CalendarClock,"orange","En retard ou ce mois"],["PM réalisées",data?.pmRealisees,ClipboardCheck,"green","Ce mois-ci"]];
   return <div className="dashboard">
     <section className="dashboardHero"><div className="dashboardHeroText"><span className="eyebrow">CENTRE DE PILOTAGE · ENGINEERING</span><h1>Bonjour {user?.prenom || user?.nom || "Utilisateur"} <span>👋</span></h1><p>Voici la situation de votre maintenance aujourd'hui.</p><div className="dashboardHeroMeta"><CalendarDays/><span>{dateLabel}</span></div></div>
@@ -153,7 +155,7 @@ function Dashboard({ user, onNavigate }) {
       <article className="dashboardPanel"><div className="dashboardPanelHead"><div><span className="eyebrow">SUIVI OPÉRATIONNEL</span><h3>Dernières pannes</h3></div><button onClick={()=>onNavigate("liste")}>Tout voir <ArrowUpRight/></button></div>
       {data?.recentPannes?.length?<div className="dashboardRows">{data.recentPannes.map((row,index)=><div className="dashboardRow" key={row.id||row.wo||index}><span className={row.statut==="Close"?"rowStatus closed":"rowStatus open"}>{row.statut==="Close"?<CheckCircle2/>:<CircleAlert/>}</span><div className="dashboardRowMain"><strong>{row.machine||"Machine non précisée"}</strong><span>{row.wo?"WO "+row.wo+" · ":""}{row.probleme||"Intervention de maintenance"}</span></div><div className="dashboardRowMeta"><span>{formatDate(row.date_panne)}</span><small>{row.unite||"—"}</small></div></div>)}</div>:<div className="dashboardEmpty"><ClipboardList/><strong>Aucune panne récente à afficher</strong><span>Les nouvelles déclarations apparaîtront ici.</span></div>}</article>
       <article className="dashboardPanel"><div className="dashboardPanelHead"><div><span className="eyebrow">ANTICIPER LES ARRÊTS</span><h3>Maintenance préventive</h3></div><button onClick={()=>onNavigate("pm")}>Planning <ArrowUpRight/></button></div>
-      {data?.upcomingPM?.length?<div className="dashboardRows">{data.upcomingPM.map((row,index)=><div className="dashboardRow" key={row.id||row.machine_tag||index}><span className="pmDate"><strong>{new Date(row.date_prevue+"T00:00:00").getDate()}</strong><small>{new Intl.DateTimeFormat("fr-FR",{month:"short"}).format(new Date(row.date_prevue+"T00:00:00"))}</small></span><div className="dashboardRowMain"><strong>{row.machine_tag||"Machine"}</strong><span>{row.frequence||"Maintenance préventive"} · {row.unite||"—"}</span></div><span className="pmBadge">{row.statut||"Planifiée"}</span></div>)}</div>:<div className="dashboardEmpty"><CalendarClock/><strong>Aucune PM à venir</strong><span>Le planning préventif est à jour.</span></div>}</article>
+      {data?.upcomingPM?.length?<div className="dashboardRows">{data.upcomingPM.map((row,index)=><div className="dashboardRow" key={row.id||row.machine_tag||index}><span className="pmDate"><strong>{new Date(row.date_prevue+"T00:00:00").getDate()}</strong><small>{new Intl.DateTimeFormat(languageForUI(),{month:"short"}).format(new Date(row.date_prevue+"T00:00:00"))}</small></span><div className="dashboardRowMain"><strong>{row.machine_tag||"Machine"}</strong><span>{row.frequence||"Maintenance préventive"} · {row.unite||"—"}</span></div><span className="pmBadge">{row.statut||"Planifiée"}</span></div>)}</div>:<div className="dashboardEmpty"><CalendarClock/><strong>Aucune PM à venir</strong><span>Le planning préventif est à jour.</span></div>}</article>
     </section>
     <section className="dashboardQuick"><div className="dashboardQuickTitle"><span className="eyebrow">ACCÈS RAPIDE</span><h3>Que souhaitez-vous faire ?</h3></div><div className="dashboardQuickGrid">
       <button onClick={()=>onNavigate("saisie")}><span className="quickIcon orange"><PlusCircle/></span><span><strong>Déclarer une panne</strong><small>Créer un nouvel ordre de travail</small></span><ArrowUpRight/></button>
@@ -202,9 +204,9 @@ function StatsAncien() {
   const pmRate=pm.length?completedPM.length/pm.length*100:0;
   const mttr=closed.length?closedDowntime/closed.length:null;
   const mtbf=pannes.length?operatingHours/pannes.length:null;
-  const fmt=value=>new Intl.NumberFormat("fr-FR",{maximumFractionDigits:1}).format(value);
+  const fmt=value=>new Intl.NumberFormat(languageForUI(),{maximumFractionDigits:1}).format(value);
   const units=["Toutes les unités",...dataset.units].sort((a,b)=>a.localeCompare(b,"fr"));
-  const months=Array.from({length:6},(_,i)=>{const d=new Date(today.getFullYear(),today.getMonth()-5+i,1);return {key:d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"),label:new Intl.DateTimeFormat("fr-FR",{month:"short"}).format(d)};});
+  const months=Array.from({length:6},(_,i)=>{const d=new Date(today.getFullYear(),today.getMonth()-5+i,1);return {key:d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"),label:new Intl.DateTimeFormat(languageForUI(),{month:"short"}).format(d)};});
   const monthly=months.map(m=>({...m,count:dataset.pannes.filter(r=>inUnit(r)&&String(r.date_panne||"").slice(0,7)===m.key).length}));
   const maxMonth=Math.max(1,...monthly.map(m=>m.count));
   const topMachines=Object.entries(pannes.reduce((acc,r)=>{const k=r.machine||"Non renseignée";acc[k]=(acc[k]||0)+1;return acc;},{})).sort((a,b)=>b[1]-a[1]).slice(0,6);
@@ -224,7 +226,7 @@ function StatsAncien() {
     ["PM en retard",overduePM.length,"À réaliser avant aujourd’hui",CircleAlert,"red"]
   ];
   return <div className="statsPage">
-    <div className="statsHero"><div><span className="eyebrow">ENGINEERING · PERFORMANCE & FIABILITÉ</span><h1>Centre de pilotage</h1><p>Une vision consolidée de la performance de maintenance, des arrêts et du préventif.</p><div className="statsHeroMeta"><span><Activity/> Analyse opérationnelle</span><span><CalendarDays/> {new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"long",year:"numeric"}).format(today)}</span></div></div><div className="statsHeroMark"><div className="statsHeroOrbit"/><div className="statsHeroIcon"><BarChart3/></div><span>ENGINEERING</span></div></div>
+    <div className="statsHero"><div><span className="eyebrow">ENGINEERING · PERFORMANCE & FIABILITÉ</span><h1>Centre de pilotage</h1><p>Une vision consolidée de la performance de maintenance, des arrêts et du préventif.</p><div className="statsHeroMeta"><span><Activity/> Analyse opérationnelle</span><span><CalendarDays/> {new Intl.DateTimeFormat(languageForUI(),{day:"2-digit",month:"long",year:"numeric"}).format(today)}</span></div></div><div className="statsHeroMark"><div className="statsHeroOrbit"/><div className="statsHeroIcon"><BarChart3/></div><span>ENGINEERING</span></div></div>
     <div className="statsToolbar"><div className="statsFilterGroup"><label><CalendarDays/> Période</label><div className="statsPeriod">{[["7","7 jours"],["30","30 jours"],["90","90 jours"],["year","12 mois"],["all","Tout"]].map(([v,l])=><button key={v} className={period===v?"active":""} onClick={()=>setPeriod(v)}>{l}</button>)}</div></div><div className="statsFilterGroup statsUnitFilter"><label><Filter/> Unité</label><select value={unit} onChange={e=>setUnit(e.target.value)}>{units.map(v=><option key={v}>{v}</option>)}</select></div><button className="statsReload" onClick={load} disabled={loading}><Activity/> {loading?"Chargement…":"Actualiser"}</button></div>
     {error&&<div className="statsNotice"><CircleAlert/>{error}<button onClick={load}>Réessayer</button></div>}
     <div className="statsSectionTitle"><div><span className="eyebrow">SYNTHÈSE DE PERFORMANCE</span><h2>Indicateurs clés</h2></div><span className="statsScope">{unit} · {period==="all"?"Toutes les périodes":period==="year"?"12 derniers mois":"Derniers "+period+" jours"}</span></div>
@@ -804,7 +806,7 @@ function OperatingTime({ user }) {
   const stopped = filtered.reduce((sum,r)=>sum+(Number(r.heures_arret)||0),0);
   const planned = filtered.reduce((sum,r)=>sum+(Number(r.heures_planifiees)||0),0);
   const availability = planned ? Math.round(running / planned * 1000) / 10 : 0;
-  const hours = n => n.toLocaleString("fr-FR",{maximumFractionDigits:1})+" h";
+  const hours = n => n.toLocaleString(languageForUI(),{maximumFractionDigits:1})+" h";
   const resetFilters = () => {setQuery("");setFilterUnit("");setFilterMachine("");setFilterMonth("");};
   const unitMachines = context.machines.filter(machine => !draft.unite || machine.unite === draft.unite);
   const save = async event => {
@@ -891,7 +893,7 @@ function App() {
   const logout = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch {} localStorage.removeItem("engineering_token"); localStorage.removeItem("engineering_user"); setUser(null); };
   if (!user) return <Login onLogin={login} language={language} setLanguage={setLanguage} />;
   const allowed = item => item === "parametres" ? user.role === "admin" : true;
-  const content = module === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : module === "stats" ? <StatsMaster theme={theme} onThemeChange={setTheme} /> : module === "machines" ? <MachinePage user={user} /> : module === "saisie" ? <FailureEntry user={user} /> : module === "pm" ? <PreventiveMaintenance user={user} /> : module === "operating" ? <OperatingTime user={user} /> : module === "effectif" ? <Effectif user={user} api={api} /> :
+  const content = module === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : module === "stats" ? <StatsMaster theme={theme} onThemeChange={setTheme} language={language} /> : module === "machines" ? <MachinePage user={user} /> : module === "saisie" ? <FailureEntry user={user} /> : module === "pm" ? <PreventiveMaintenance user={user} /> : module === "operating" ? <OperatingTime user={user} /> : module === "effectif" ? <Effectif user={user} api={api} /> :
     module === "parametres" ? <AccessSettings user={user} /> : <DataPage key={module} module={module} user={user} />;
   return <div className="appShell">
     <aside id="engineering-sidebar" className={menuOpen ? "sidebar open" : "sidebar"}>

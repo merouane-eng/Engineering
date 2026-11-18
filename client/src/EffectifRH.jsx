@@ -18,7 +18,7 @@ const getSites = row => {
 const siteLabel = row => getSites(row).join(" · ") || "À affecter";
 const iso = d => String(d || "").slice(0,10);
 const isDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(new Date(d + "T12:00:00").getTime());
-const formatDate = d => d ? new Intl.DateTimeFormat("fr-DZ", { day:"2-digit", month:"short", year:"numeric" }).format(new Date(iso(d) + "T12:00:00")) : "—";
+const formatDate = d => d ? new Intl.DateTimeFormat(localStorage.getItem("engineering_language")==="en"?"en-GB":"fr-DZ", { day:"2-digit", month:"short", year:"numeric" }).format(new Date(iso(d) + "T12:00:00")) : "—";
 const toMonths = (records, year, key) => MONTHS.map((_,n) => records.filter(r => iso(r[key]).startsWith(String(year) + "-" + String(n+1).padStart(2,"0"))).length);
 
 function MovementChart({ arrivals, departures }) {
