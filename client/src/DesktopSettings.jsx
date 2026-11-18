@@ -67,13 +67,13 @@ export default function DesktopSettings(){
    setNotice("Référence supprimée.");await load();
   }catch(e){setError(e.message);}finally{setBusy(false);}
  };
- const backup=async()=>{
+ const backup=async(global=false)=>{
   setBusy(true);setError("");setNotice("");
   try{
-   const res=await fetch("/api/settings/backup",{headers:header()});
+   const res=await fetch(global?"/api/settings/backup/global":"/api/settings/backup",{headers:header()});
    if(!res.ok){const d=await res.json().catch(()=>({}));throw new Error(d.error||"Sauvegarde impossible.");}
-   saveFile(await res.blob(),"Engineering_Parametres_Sauvegarde.xlsx");
-   setNotice("Sauvegarde Excel des références téléchargée.");
+   saveFile(await res.blob(),global?"Engineering_Sauvegarde_Globale.xlsx":"Engineering_Parametres_Sauvegarde.xlsx");
+   setNotice(global?"Sauvegarde Excel globale de tous les modules téléchargée.":"Sauvegarde Excel des références téléchargée.");
   }catch(e){setError(e.message);}finally{setBusy(false);}
  };
  const pick=async e=>{
@@ -142,11 +142,12 @@ export default function DesktopSettings(){
    <div className="ds-heading"><div><h3><Database size={20}/> Sauvegarde / Restauration</h3>
     <p>Archive des listes de référence. La restauration est une fusion qui ignore les doublons.</p></div></div>
    <div className="ds-backupActions">
-    <button type="button" onClick={backup} disabled={busy}><Download size={18}/><span><strong>Exporter les paramètres</strong><small>Sauvegarde complète des références en Excel</small></span></button>
+    <button type="button" onClick={()=>backup(true)} disabled={busy}><Database size={18}/><span><strong>Exporter TOUTES les données</strong><small>Archive Excel multifeuille des modules et paramètres</small></span></button>
+    <button type="button" onClick={()=>backup(false)} disabled={busy}><Download size={18}/><span><strong>Exporter les paramètres</strong><small>Sauvegarde des listes de référence en Excel</small></span></button>
     <button type="button" onClick={()=>fileRef.current?.click()} disabled={busy}><Upload size={18}/><span><strong>Importer (fusion)</strong><small>Aperçu et confirmation avant ajout</small></span></button>
     <input ref={fileRef} hidden type="file" accept=".xlsx" onChange={pick}/>
    </div>
-   <div className="ds-safety"><AlertTriangle size={17}/><p>Pour protéger Supabase, le remplacement total destructeur et la restauration d'une base SQLite ne sont pas proposés ici. Les exports des données métier (Machines, Effectif, Pannes, PM et Operating Time) sont disponibles dans la barre Excel admin.</p></div>
+   <div className="ds-safety"><AlertTriangle size={17}/><p>Pour protéger Supabase, le remplacement total destructeur et la restauration directe d’une base SQLite ne sont pas proposés. Les imports Excel des données métier restent disponibles par module dans la barre admin, avec aperçu et confirmation.</p></div>
    {preview&&<div className="ds-preview">
     <div className="ds-heading"><div><strong>{preview.name}</strong><p>Aucune donnée modifiée avant confirmation.</p></div><button onClick={()=>setPreview(null)} aria-label="Fermer"><X size={17}/></button></div>
     <div className="ds-previewStats"><span>{preview.total} ligne(s)</span><span>{preview.creations} nouvelle(s)</span><span>{preview.duplicates} doublon(s)</span></div>
