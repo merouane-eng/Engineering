@@ -28,7 +28,8 @@ for(const size of sizes){
   test(size.name+" — navigation et mise en page des 9 modules",async({browser})=>{
     const context=await browser.newContext({viewport:{width:size.width,height:size.height},isMobile:size.width<=600,hasTouch:size.width<=800,serviceWorkers:"block"});
     const page=await context.newPage(),errors=[];
-    page.on("pageerror",e=>errors.push(e.message));
+    page.setDefaultTimeout(4000);
+    page.on("pageerror",e=>{errors.push(e.message);console.log("PAGE ERROR",size.name,e.message);});
     await page.addInitScript(()=>{
       localStorage.setItem("engineering_token","test-responsive");
       localStorage.setItem("engineering_user",JSON.stringify({id:"test-1",role:"admin",nom:"Benk",prenom:"Leila",service:"Électricité",matricule:"TEST-001",toutes_unites:false}));
@@ -36,7 +37,7 @@ for(const size of sizes){
     await page.route("**/api/**",route=>route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(fixture(route.request().url()))}));
     await page.goto(APP,{waitUntil:"domcontentloaded"});
     await expect(page.locator(".mobileTopbar")).toBeVisible();
-    const ids=["accueil","machines","effectif","saisie","liste","pm","operating","stats","parametres"];
+    const ids=["accueil","effectif","saisie","liste","pm","operating","stats","parametres","machines"];
     for(const module of ids){
       const info=await page.evaluate((name)=>{
         const menu=document.querySelector(".mobileMenu"),btn=document.querySelector("aside button.module-"+name),aside=document.querySelector("aside.sidebar");
