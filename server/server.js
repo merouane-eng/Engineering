@@ -611,11 +611,10 @@ async function remoteEffectifWithUnits(user) {
     if (!unitsByEmployee.has(key)) unitsByEmployee.set(key, []);
     unitsByEmployee.get(key).push(association.unite);
   }
-  return employees.filter(employee=>!isElectrician(user) || normService(employee.service)==="electricite").map(employee => ({
-    ...employee,
-    is_admin: employee.role === "admin",
-    units: unitsByEmployee.get(String(employee.id)) || []
-  }));
+  return employees.filter(employee=>!isElectrician(user) || normService(employee.service)==="electricite").map(employee => {
+    const { password_hash, ...safeEmployee } = employee;
+    return { ...safeEmployee, is_admin: employee.role==="admin", units: unitsByEmployee.get(String(employee.id)) || [] };
+  });
 }
 
 function machineFieldsFromBody(body, includeCreation = false) {
@@ -822,7 +821,7 @@ app.get("/api/pm/context", requireAuth, async (req, res) => {
     const [units, allMachines, employees, programmes] = await Promise.all([
       userUnits(req.user),
       supabaseRequest("machines", { query: "?select=id,tag,designation,unite&actif=eq.1&order=unite.asc,tag.asc" }),
-      supabaseRequest("effectif", { query: "?select=id,nom,prenom,actif&actif=eq.true&order=nom.asc,prenom.asc" }),
+      supabaseRequest("effectif", { query: "?select=id,nom,prenom,service,actif&actif=eq.true&order=nom.asc,prenom.asc" }),
       supabaseRequest("pm_programmees", { query: "?select=frequence" })
     ]);
     const machines = allMachines.filter(row => req.user.role === "admin" || req.user.toutes_unites || units.includes(row.unite));
@@ -832,7 +831,8 @@ app.get("/api/pm/context", requireAuth, async (req, res) => {
       technicians: req.user.role === "admin"
         ? employees.map(row => ({ id: row.id, name: [row.nom, row.prenom].filter(Boolean).join(" ").trim() }))
         : [{ id: req.user.id, name: technician }],
-      frequencies: [...new Set(programmes.map(row => row.frequence).filter(Boolean))].sort()
+      frequencies: [...new Set(programmes.map(row => row.frequence).filter(Boolean))].sort(),
+      services: req.user.role==="admin" ? [...new Set(employees.map(row=>row.service).filter(Boolean))].sort() : [req.user.service].filter(Boolean)
     });
   } catch (error) {
     res.status(502).json({ error: `Chargement du contexte Supabase impossible: ${error.message}` });
@@ -1068,6 +1068,23 @@ app.post("/api/pm", requireAuth, async (req, res) => {
     const created = await supabaseRequest("pm_programmees", { method: "POST", query: "?select=*", prefer: "return=representation", body: [payload] });
     return res.status(201).json(created?.[0] || payload);
   } catch (error) { return res.status(502).json({ error: `Création PM Supabase impossible: ${error.message}` }); }
+});
+
+// Attribution explicite des PM historiques (administrateur uniquement).
+// N'altère ni les dates, ni les résultats, ni les affectations de techniciens.
+app.put("/api/pm/:id/service", requireAuth, requireModule("parametres"), async (req,res) => {
+  try {
+    const service=String(req.body.service_intervenant || "").trim();
+    const effectifs=await supabaseRequest("effectif",{query:"?select=service&limit=1000"});
+    const permitted=new Set(effectifs.map(row=>normService(row.service)).filter(Boolean));
+    if (service && !permitted.has(normService(service))) return res.status(400).json({error:"Service non référencé."});
+    const updated=await supabaseRequest("pm_programmees",{
+      method:"PATCH",query:`?id=eq.${encodeURIComponent(req.params.id)}&select=id,service_intervenant`,
+      prefer:"return=representation",body:{service_intervenant:service || null}
+    });
+    if (!updated?.length) return res.status(404).json({error:"PM introuvable."});
+    return res.json(updated[0]);
+  } catch(err){return res.status(502).json({error:`Attribution du service impossible : ${err.message}`});}
 });
 
 app.post("/api/pm/:id/realiser", requireAuth, async (req, res) => {
