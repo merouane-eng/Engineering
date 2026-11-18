@@ -1286,6 +1286,8 @@ app.post("/api/effectif", requireAuth, requireModule("parametres"), async (req, 
     const { rh, units } = effectifRHPayload(req.body);
     const payload = {
       matricule, nom, prenom, service, fonction, role, ...rh,
+      ...(Object.prototype.hasOwnProperty.call(req.body,"telephone")?{telephone:String(req.body.telephone||"").trim()||null}:{}),
+      ...(Object.prototype.hasOwnProperty.call(req.body,"email")?{email:String(req.body.email||"").trim()||null}:{}),
       actif: req.body.actif !== false,
       date_recrutement: req.body.date_recrutement || null,
       date_depart: req.body.date_depart || null,
@@ -1331,6 +1333,8 @@ app.put("/api/effectif/:id", requireAuth, requireModule("parametres"), async (re
     const { rh, units } = effectifRHPayload(req.body);
     const payload = {
       matricule, nom, prenom, service, fonction, role, ...rh,
+      ...(Object.prototype.hasOwnProperty.call(req.body,"telephone")?{telephone:String(req.body.telephone||"").trim()||null}:{}),
+      ...(Object.prototype.hasOwnProperty.call(req.body,"email")?{email:String(req.body.email||"").trim()||null}:{}),
       actif: req.body.actif !== false,
       date_recrutement: req.body.date_recrutement || null,
       date_depart: req.body.date_depart || null,
