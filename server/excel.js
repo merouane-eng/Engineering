@@ -86,15 +86,17 @@ const columnRef = index => {
   while(n){n--;result=String.fromCharCode(65+n%26)+result;n=Math.floor(n/26);}
   return result;
 };
+const slash = String.fromCharCode(92);
+const anyXml = "[" + slash + "s" + slash + "S]*?";
 const extract = (xml,tag) => {
   const result=[];
-  const re=new RegExp("<(?:[a-z]+:)?" + tag + "(?:\s[^>]*)?>([\s\S]*?)<\/(?:[a-z]+:)?" + tag + ">","g");
+  const re=new RegExp("<(?:[a-z]+:)?" + tag + "(?:" + slash + "s[^>]*)?>(" + anyXml + ")</(?:[a-z]+:)?" + tag + ">","g");
   let m;while((m=re.exec(xml)))result.push(m[1]);
   return result;
 };
 const innerText = x => extract(x,"t").map(unesc).join("");
 const attribute = (tag,key) => {
-  const m=tag.match(new RegExp("(?:\\s|^)"+key+"="([^"]*)""));
+  const m=tag.match(new RegExp(key+'="([^"]*)"'));
   return m?unesc(m[1]):"";
 };
 export function readXlsx(buffer){
@@ -104,17 +106,20 @@ export function readXlsx(buffer){
     const rel=files.get("xl/_rels/workbook.xml.rels")||"";
     const sheetId=(files.get("xl/workbook.xml")||"").match(/<sheet[^>]*r:id="([^"]+)"/)?.[1];
     const target=sheetId&&rel.match(new RegExp('<Relationship[^>]*Id="'+sheetId+'"[^>]*Target="([^"]+)"'))?.[1];
-    if(target) sheet=files.get("xl/"+target.replace(/^/?xl//,"").replace(/^//,""));
+    if(target){
+      const name=target.startsWith("/")?target.slice(1):"xl/"+target;
+      sheet=files.get(name.startsWith("xl/")?name:"xl/"+name);
+    }
   }
   if(!sheet) throw new Error("Première feuille Excel introuvable.");
   const shared=extract(files.get("xl/sharedStrings.xml")||"","si").map(innerText);
   const rows=[];
-  const rowRegex=/<(?:w+:)?row[^>]*>([sS]*?)</(?:w+:)?row>/g;
+  const rowRegex=new RegExp("<(?:[a-z]+:)?row[^>]*>("+anyXml+")</(?:[a-z]+:)?row>","g");
   let match;
   while((match=rowRegex.exec(sheet))){
     if(rows.length>=MAX_ROWS+1) throw new Error("Maximum 1 200 lignes par import.");
     const cells=[];
-    const cellRegex=/<(?:w+:)?c([^>]*?)(?:/>|>([sS]*?)</(?:w+:)?c>)/g;
+    const cellRegex=new RegExp("<(?:[a-z]+:)?c([^>]*?)(?:/>|>("+anyXml+")</(?:[a-z]+:)?c>)","g");
     let m;
     while((m=cellRegex.exec(match[1]))){
       const attrs=m[1],content=m[2]||"",index=refToIndex(attribute(attrs,"r"));
