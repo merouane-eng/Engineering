@@ -20,6 +20,8 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Vérifier les fichiers Excel et les autorisations administrateur
+        run: node --test tests/excel.test.mjs
       - name: Installer Playwright
         run: |
           npm install --no-save @playwright/test
