@@ -702,8 +702,19 @@ function requireAuth(req, res, next) {
 }
 
 function requireModule(module) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!modules[module]?.includes(req.user.role)) return res.status(403).json({ error: "Accès refusé" });
+    if (module === "parametres") {
+      try {
+        const id=req.user.supabase_id||req.user.id;
+        if (!id) return res.status(403).json({error:"Administrateur non vérifié."});
+        const active=await supabaseRequest("effectif",{query:"?select=id,role,actif&id=eq."+encodeURIComponent(id)+"&limit=1"});
+        if (active[0]?.role!=="admin" || active[0]?.actif!==true)
+          return res.status(403).json({error:"Accès administrateur révoqué."});
+      }catch{
+        return res.status(503).json({error:"Vérification des droits indisponible."});
+      }
+    }
     next();
   };
 }
@@ -1034,7 +1045,7 @@ app.get("/api/modules/:module", requireAuth, (req, res, next) => requireModule(r
       return res.json(await remoteModuleRows(module, req.user));
     }
     if (module === "parametres") {
-      return res.json(dbAll("SELECT * FROM ref_listes ORDER BY ordre, valeur"));
+      return res.json(await desktopSettings.list());
     }
     return res.status(404).json({ error: "Module inconnu" });
   } catch (error) {
