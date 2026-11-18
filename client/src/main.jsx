@@ -245,8 +245,12 @@ function PageTitle({ title, subtitle }) {
 function MachinePage({ user }) {
   const [rows,setRows]=useState([]),[query,setQuery]=useState(""),[unit,setUnit]=useState(""),[group,setGroup]=useState(""),[area,setArea]=useState(""),[editing,setEditing]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState("");
   const defs=fieldsByModule.machines;
+  const [referenceOptions,setReferenceOptions]=useState({});
   const load=async()=>{setLoading(true);setError("");try{const data=await api("/api/modules/machines");setRows(Array.isArray(data)?data:[]);}catch(e){setError(e.message||"Chargement impossible");}finally{setLoading(false);}};
-  useEffect(()=>{load();},[]);
+  useEffect(()=>{load();api("/api/references/active").then(rows=>{
+    const get=type=>rows.filter(r=>r.type_liste===type).map(r=>r.valeur);
+    setReferenceOptions({unite:get("unite"),groupe:get("groupe"),zone:get("zone")});
+  }).catch(()=>{});},[]);
   const unique=values=>[...new Set(values.map(v=>String(v||"").trim()).filter(Boolean))].sort((x,y)=>x.localeCompare(y,"fr"));
   const units=unique(rows.map(r=>r.unite));
   const groups=unique(rows.filter(r=>!unit||r.unite===unit).map(r=>r.groupe));
@@ -296,7 +300,7 @@ function MachinePage({ user }) {
       {byUnit.length?byUnit.map(item=><div className="mm-unitRow" key={item.name}><div className="mm-unitLabel"><span>{item.name}</span><strong>{item.count}</strong></div><div className="mm-track"><i style={{width:(item.count/maxUnit*100)+"%"}}/></div></div>):<div className="mm-empty">Aucune donnée</div>}
       <div className="mm-sideStats"><div><strong>{groupCount}</strong><span>Groupes</span></div><div><strong>{inactiveCount}</strong><span>Inactives</span></div></div>
     </aside></section>
-    {editing&&<Editor fields={defs} values={editing} onClose={()=>setEditing(null)} onSave={save}/>}
+    {editing&&<Editor fields={defs} values={editing} options={referenceOptions} onClose={()=>setEditing(null)} onSave={save}/>}
   </div>;
 }
 
@@ -483,7 +487,7 @@ function FailureEntry({ user }) {
   </div>;
 }
 
-function Editor({ fields, values, onClose, onSave }) {
+function Editor({ fields, values, onClose, onSave, options={} }) {
   const [draft, setDraft] = useState(values);
   const submit = event => { event.preventDefault(); onSave(draft); };
   return <div className="modalBack">
@@ -491,6 +495,10 @@ function Editor({ fields, values, onClose, onSave }) {
       <div className="modalHead"><h3>{values.id ? "Modifier" : "Nouvel élément"}</h3><button type="button" className="iconButton" onClick={onClose}><X /></button></div>
       <div className="formGrid">{fields.map(([key, label, kind]) => <label key={key}>{label}
         {kind === true ? <select value={draft[key] ?? 1} onChange={e => setDraft({ ...draft, [key]: Number(e.target.value) })}><option value={1}>Oui</option><option value={0}>Non</option></select>
+          : options[key]?.length ? <select value={draft[key]??""} onChange={e=>setDraft({...draft,[key]:e.target.value})}>
+            <option value="">Sélectionner…</option>
+            {[...new Set([...(options[key]||[]),draft[key]].filter(Boolean))].map(value=><option key={value} value={value}>{value}</option>)}
+            </select>
           : kind === "date" ? <input type="date" value={draft[key] || ""} onChange={e => setDraft({ ...draft, [key]: e.target.value })} />
           : kind === "number" ? <input type="number" step="0.1" value={draft[key] ?? ""} onChange={e => setDraft({ ...draft, [key]: Number(e.target.value) })} />
           : <input value={draft[key] ?? ""} onChange={e => setDraft({ ...draft, [key]: e.target.value })} />}
