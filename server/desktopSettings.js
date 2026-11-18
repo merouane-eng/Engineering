@@ -185,15 +185,16 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
           ["sop","SOP",["code","titre","version","machine","unite","date_application","date_revision","validateur","chemin_fichier","commentaire","actif"]]
         ];
         const datasets=await Promise.all(schema.map(async([table,name,fields])=>{
-          const rows=[];
+          const rows=[];let complete=false;
           for(let offset=0;offset<10000;offset+=1000){
             const page=await supabaseRequest(table,{
               query:"?select="+fields.join(",")+"&limit=1000&offset="+offset+
                 "&order="+(table==="effectif_unites"?"unite":"id")+".asc"
             });
             rows.push(...page);
-            if(page.length<1000)break;
+            if(page.length<1000){complete=true;break;}
           }
+          if(!complete)throw new Error("La table "+table+" dépasse la limite de sauvegarde ; aucune archive partielle ne sera fournie.");
           return {name,headers:fields,rows:rows.map(r=>fields.map(f=>r[f]??""))};
         }));
         const refs=await list(),refFields=["type_liste","valeur","parent","ordre","actif"];
