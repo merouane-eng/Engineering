@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
+import { registerExcelRoutes } from "./bulkExcel.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1535,6 +1536,8 @@ app.delete("/api/tables/:table/:id", requireAuth, async (req, res) => {
 });
 
 
+
+registerExcelRoutes(app,{requireAuth,supabaseRequest,remoteEffectifWithUnits,localTimestamp});
 
 const clientDist = path.resolve(__dirname, "../client/dist");
 app.use(express.static(clientDist));
