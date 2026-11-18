@@ -379,7 +379,8 @@ function initSchema() {
       ["toutes_unites", "INTEGER DEFAULT 0"],
       ["date_recrutement", "TEXT"],
       ["date_depart", "TEXT"],
-      ["role", "TEXT"]
+      ["role", "TEXT"],
+      ["site", "TEXT"], ["initiale", "TEXT"], ["type_contrat", "TEXT"], ["date_fin_contrat", "TEXT"]
     ]) {
       const exists = db.exec(`SELECT 1 FROM pragma_table_info('techniciens') WHERE name = '${column}'`).length > 0;
       if (!exists) db.exec(`ALTER TABLE techniciens ADD COLUMN ${column} ${definition}`);
@@ -454,6 +455,10 @@ async function loadSupabaseDatabase() {
       password_hash: employee.password_hash || null,
       date_recrutement: employee.date_recrutement || null,
       date_depart: employee.date_depart || null,
+      site: employee.site || null,
+      initiale: employee.initiale || null,
+      type_contrat: employee.type_contrat || null,
+      date_fin_contrat: employee.date_fin_contrat || null,
       date_creation: employee.created_at || employee.date_creation || localTimestamp(),
       date_modification: employee.updated_at || employee.date_modification || null,
       role: employee.role || "technicien"
@@ -1103,11 +1108,12 @@ app.put("/api/users/:id/role", requireAuth, requireModule("parametres"), async (
 app.get("/api/effectif/context", requireAuth, requireModule("effectif"), async (_req, res) => {
   try {
     const [machines, employees] = await Promise.all([
-      supabaseRequest("machines", { query: "?select=unite,zone&actif=eq.1" }),
+      Promise.all([supabaseRequest("machines", { query: "?select=unite&actif=eq.1" }),
+                   supabaseRequest("effectif_unites", { query: "?select=unite" })]).then(parts=>parts.flat()),
       supabaseRequest("effectif", { query: "?select=service,fonction&actif=eq.true" })
     ]);
     res.json({
-      units: [...new Set(machines.map(row => row.unite).filter(Boolean))].sort(),
+      units: [...new Set([...machines.map(row => row.unite), "SG01", "SG02"].filter(Boolean))].sort(),
       services: [...new Set(employees.map(row => row.service).filter(Boolean))].sort(),
       functions: [...new Set(employees.map(row => row.fonction).filter(Boolean))].sort()
     });
@@ -1127,6 +1133,10 @@ async function syncEffectifToSupabase(employee) {
     actif: Boolean(employee.actif),
     date_recrutement: employee.date_recrutement || null,
     date_depart: employee.date_depart || null,
+    site: employee.site || null,
+    initiale: employee.initiale || null,
+    type_contrat: employee.type_contrat || null,
+    date_fin_contrat: employee.date_fin_contrat || null,
     toutes_unites: Boolean(employee.toutes_unites)
   };
   const existing = await supabaseRequest("effectif", {
@@ -1168,6 +1178,31 @@ async function syncEffectifToSupabase(employee) {
   return effectifId;
 }
 
+
+const EF_SITES = ["Site 01", "Site 02"];
+const EF_BOTH = "Site 01; Site 02";
+const efSiteUnit = unit => /^(U6|U06|SG02)$/i.test(String(unit || "").trim()) ? "Site 02" : "Site 01";
+function effectifRHPayload(body) {
+  const units = body.toutes_unites ? [] : [...new Set((Array.isArray(body.units) ? body.units : []).map(x => String(x).trim()).filter(Boolean))];
+  const affected = body.toutes_unites || body.is_admin ? EF_SITES : EF_SITES.filter(s => units.some(u => efSiteUnit(u) === s));
+  const derived = affected.join("; ");
+  const requested = String(body.site || "").trim();
+  if (requested && ![...EF_SITES, EF_BOTH].includes(requested)) throw new Error("Site invalide.");
+  if (derived && requested && derived !== requested) throw new Error("Le site ne correspond pas aux unités affectées.");
+  const type = String(body.type_contrat || "").trim().toUpperCase() || null;
+  const end = String(body.date_fin_contrat || "").trim() || null;
+  if (type && !["CDI", "CDD"].includes(type)) throw new Error("Type de contrat invalide.");
+  const valid = end && /^\d{4}-\d{2}-\d{2}$/.test(end) &&
+    !Number.isNaN(new Date(end+"T12:00:00Z").valueOf()) &&
+    new Date(end+"T12:00:00Z").toISOString().slice(0,10) === end;
+  if (type === "CDD" && !valid) throw new Error("Date de fin du CDD obligatoire (AAAA-MM-JJ).");
+  if (type !== "CDD" && end) throw new Error("La fin de contrat est réservée aux CDD.");
+  if (end && body.date_recrutement && end < String(body.date_recrutement).slice(0,10)) throw new Error("Date de fin antérieure au recrutement.");
+  return { units, rh: { site: derived || requested || null,
+    initiale: String(body.initiale || "").trim() || null,
+    type_contrat: type, date_fin_contrat: end } };
+}
+
 app.post("/api/effectif", requireAuth, requireModule("parametres"), async (req, res) => {
   const matricule = String(req.body.matricule || "").trim();
   const nom = String(req.body.nom || "").trim();
@@ -1193,8 +1228,9 @@ app.post("/api/effectif", requireAuth, requireModule("parametres"), async (req, 
 
     const role = req.body.is_admin ? "admin" :
       (/superviseur|supervisor/i.test(fonction) ? "superviseur" : "technicien");
+    const { rh, units } = effectifRHPayload(req.body);
     const payload = {
-      matricule, nom, prenom, service, fonction, role,
+      matricule, nom, prenom, service, fonction, role, ...rh,
       actif: req.body.actif !== false,
       date_recrutement: req.body.date_recrutement || null,
       date_depart: req.body.date_depart || null,
@@ -1208,8 +1244,6 @@ app.post("/api/effectif", requireAuth, requireModule("parametres"), async (req, 
     const employee = created?.[0];
     if (!employee?.id) throw new Error("Supabase n'a pas retourné l'identifiant du nouvel employé");
 
-    const units = req.body.toutes_unites ? [] :
-      [...new Set((Array.isArray(req.body.units) ? req.body.units : []).map(value => String(value).trim()).filter(Boolean))];
     if (units.length) {
       await supabaseRequest("effectif_unites", {
         method: "POST", prefer: "return=minimal",
@@ -1239,8 +1273,9 @@ app.put("/api/effectif/:id", requireAuth, requireModule("parametres"), async (re
     if (duplicate.length) return res.status(409).json({ error: "Ce matricule existe déjà" });
     const role = req.body.is_admin ? "admin" :
       (/superviseur|supervisor/i.test(fonction) ? "superviseur" : "technicien");
+    const { rh, units } = effectifRHPayload(req.body);
     const payload = {
-      matricule, nom, prenom, service, fonction, role,
+      matricule, nom, prenom, service, fonction, role, ...rh,
       actif: req.body.actif !== false,
       date_recrutement: req.body.date_recrutement || null,
       date_depart: req.body.date_depart || null,
@@ -1256,8 +1291,6 @@ app.put("/api/effectif/:id", requireAuth, requireModule("parametres"), async (re
     await supabaseRequest("effectif_unites", {
       method: "DELETE", query: `?effectif_id=eq.${encodeURIComponent(id)}`
     });
-    const units = req.body.toutes_unites ? [] :
-      [...new Set((Array.isArray(req.body.units) ? req.body.units : []).map(value => String(value).trim()).filter(Boolean))];
     if (units.length) {
       await supabaseRequest("effectif_unites", {
         method: "POST", prefer: "return=minimal",
