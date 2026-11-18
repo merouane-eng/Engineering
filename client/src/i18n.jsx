@@ -225,7 +225,20 @@ const DISPLAY_FR = {
   "QUARTERLY":"Trimestrielle", "HALF YEARLY":"Semestrielle",
   "YEARLY":"Annuelle",
   "admin":"Administrateur", "superviseur":"Superviseur", "technicien":"Technicien",
-  "Active":"Actif", "Inactive":"Inactif"
+  "Active":"Actif", "Inactive":"Inactif",
+  "ENGINEERING ANALYTICS":"ANALYSES ENGINEERING",
+  "COMMAND CENTER":"CENTRE DE PILOTAGE",
+  "EXECUTIVE SUMMARY":"SYNTHÈSE DE PERFORMANCE",
+  "RELIABILITY ENGINEERING":"INGÉNIERIE DE FIABILITÉ",
+  "PREVENTIVE MAINTENANCE":"MAINTENANCE PRÉVENTIVE",
+  "PERFORMANCE INDIVIDUELLE":"PERFORMANCE INDIVIDUELLE",
+  "ENGINEERING · INDUSTRIAL INTELLIGENCE":"ENGINEERING · ANALYSE INDUSTRIELLE",
+  "ENGINEERING · ASSET MANAGEMENT":"ENGINEERING · GESTION DES ÉQUIPEMENTS",
+  "ENGINEERING · WORK ORDER MANAGEMENT":"ENGINEERING · GESTION DES INTERVENTIONS",
+  "ENGINEERING · PEOPLE & OPERATIONS":"ENGINEERING · ÉQUIPES ET OPÉRATIONS",
+  "ANALYSE • PERFORMANCE":"ANALYSE • PERFORMANCE",
+  "WORK ORDER STATUS":"STATUT DES INTERVENTIONS",
+  "TOTAL PM":"TOTAL PM"
 };
 
 const REVERSE=Object.entries(TRANSLATIONS).reduce((map,[source,destination])=>{
@@ -321,9 +334,15 @@ function translateDOM(root,language){
   });
 }
 export function useLanguage(){
-  const [language,setLanguage]=useState(()=>{
+  const [language,setLanguageState]=useState(()=>{
     try{return localStorage.getItem("engineering_language")==="en"?"en":"fr";}catch{return "fr";}
   });
+  const setLanguage=(next)=>{
+    const selected=next==="en"?"en":"fr";
+    try{localStorage.setItem("engineering_language",selected);}catch{}
+    document.documentElement.lang=selected;
+    setLanguageState(selected);
+  };
   useEffect(()=>{
     try{localStorage.setItem("engineering_language",language);}catch{}
     document.documentElement.lang=language;
