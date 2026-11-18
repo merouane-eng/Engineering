@@ -68,6 +68,18 @@ for(const size of sizes){
           await page.getByRole("button",{name:"Fermer"}).click();
         }
       }
+      if(module==="parametres"){
+        await expect(page.getByText("Paramètres & accès")).toBeVisible();
+        await expect(page.getByText("Paramètres de l'application")).toBeVisible();
+        await expect(page.getByRole("tab")).toHaveCount(12);
+        await page.getByRole("tab",{name:/Groupes/}).click();
+        await expect(page.locator(".ds-actionbar")).toBeVisible();
+        await page.locator(".ds-actionbar .ds-primary").click();
+        await expect(page.locator(".ds-modal")).toBeVisible();
+        const box=await page.locator(".ds-modal").boundingBox();
+        expect(box.width).toBeLessThanOrEqual(size.width+2);
+        await page.locator(".ds-modal button[aria-label='Fermer']").click();
+      }
       if(["liste","pm","machines"].includes(module)){
         const sc=await page.locator(".tableWrap").first().evaluate(el=>el.clientWidth).catch(()=>null);
         if(sc!==null) expect(sc).toBeLessThanOrEqual(size.width);
@@ -77,3 +89,19 @@ for(const size of sizes){
     await context.close();
   });
 }
+
+test("Un technicien ne voit jamais le menu Paramètres",async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:844},serviceWorkers:"block"});
+  const page=await context.newPage();
+  await page.addInitScript(()=>{
+    localStorage.setItem("engineering_token","test-non-admin");
+    localStorage.setItem("engineering_user",JSON.stringify({id:"t1",role:"technicien",nom:"Test",prenom:"Tech",service:"Électricité"}));
+  });
+  await page.route("**/api/**",route=>route.fulfill({status:200,contentType:"application/json",body:"[]"}));
+  await page.goto(APP);
+  await expect(page.locator(".mobileMenu")).toBeVisible();
+  await page.locator(".mobileMenu").click();
+  await expect(page.locator("aside .module-parametres")).toHaveCount(0);
+  await expect(page.locator(".desktopSettings")).toHaveCount(0);
+  await context.close();
+});
