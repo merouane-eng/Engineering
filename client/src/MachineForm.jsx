@@ -1,9 +1,10 @@
 import React,{useMemo,useState} from "react";
 import {Save,X,MapPin} from "lucide-react";
 import {SITES,localisationSite,localisationLabel,localisationsForSite} from "./locationModel.js";
+import {isAdmin} from "./accessPolicy.js";
 
 // Dedicated machine form. Location codes are kept stable for WO/PM/OT links.
-export default function MachineForm({values={},locations=[],zones=[],onClose,onSave}){
+export default function MachineForm({user,values={},locations=[],zones=[],departments=[],onClose,onSave}){
  const [draft,setDraft]=useState(()=>({
    ...values,
    site:values.site||localisationSite(values.unite),
@@ -11,7 +12,8 @@ export default function MachineForm({values={},locations=[],zones=[],onClose,onS
    actif:values.actif??1,
    numero_serie:values.numero_serie||"",
    date_mise_service:values.date_mise_service||"",
-   commentaire:values.commentaire||""
+   commentaire:values.commentaire||"",
+   departement:values.departement??(isAdmin(user)?"":user?.service||"")
  }));
  const [busy,setBusy]=useState(false),[error,setError]=useState("");
  const allowed=useMemo(()=>localisationsForSite([...locations,draft.unite].filter(Boolean),draft.site),[locations,draft.unite,draft.site]);
@@ -23,7 +25,7 @@ export default function MachineForm({values={},locations=[],zones=[],onClose,onS
    }
    setBusy(true);
    try{
-     await onSave({...draft,site:draft.site,unite:draft.unite});
+     await onSave({...draft,site:draft.site,unite:draft.unite,departement:isAdmin(user)?(draft.departement||null):(values.id?values.departement||null:user.service)});
    }catch(e){setError(e.message||"Enregistrement impossible.");}finally{setBusy(false);}
  };
  return <div className="modalBack">
@@ -39,6 +41,10 @@ export default function MachineForm({values={},locations=[],zones=[],onClose,onS
     <label>Localisation *<select required value={draft.unite} onChange={e=>update("unite",e.target.value)}>
      <option value="">Sélectionner une localisation</option>
      {allowed.map(loc=><option value={loc} key={loc}>{localisationLabel(loc)}</option>)}</select></label>
+    <label>Département {isAdmin(user)?<select value={draft.departement||""} onChange={e=>update("departement",e.target.value)}>
+      <option value="">Équipement partagé (tous départements)</option>
+      {[...new Set([...departments,draft.departement].filter(Boolean))].sort().map(dep=><option key={dep} value={dep}>{dep}</option>)}
+    </select>:<input disabled value={values.id?(draft.departement||"Équipement partagé"):user?.service||"Non renseigné"}/>}</label>
     <label>Zone<input list="machine-zone-options" value={draft.zone||""} onChange={e=>update("zone",e.target.value)}/>
      <datalist id="machine-zone-options">{zones.map(z=><option value={z} key={z}/>)}</datalist></label>
     <label>Marque<input value={draft.marque||""} onChange={e=>update("marque",e.target.value)}/></label>
