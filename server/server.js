@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { registerExcelRoutes } from "./bulkExcel.js";
 import { readAllSupabase } from "./paginatedSupabase.js";
+import { localisationSite, SITES } from "../client/src/locationModel.js";
 import { createSettingsHandlers } from "./desktopSettings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -624,7 +625,7 @@ async function remoteEffectifWithUnits(user) {
 }
 
 function machineFieldsFromBody(body, includeCreation = false) {
-  const allowed = ["tag", "designation", "unite", "groupe", "zone", "marque", "modele",
+  const allowed = ["tag", "designation", "site", "unite", "zone", "marque", "modele",
     "numero_serie", "date_mise_service", "actif", "commentaire"];
   const payload = {};
   for (const key of allowed) {
@@ -875,11 +876,11 @@ app.get("/api/operating/context", requireAuth, async (req, res) => {
 app.post("/api/operating", requireAuth, async (req, res) => {
   try {
     const unit = String(req.body.unite || ""), machine = String(req.body.machine || ""), date = String(req.body.date_jour || "");
-    if (!unit || !machine || !date) return res.status(400).json({ error: "Unité, machine et date sont obligatoires" });
+    if (!unit || !machine || !date) return res.status(400).json({ error: "Localisation, machine et date sont obligatoires" });
     const allowed = await allowedUnitsForUser(req.user);
-    if (!allowed.includes(unit)) return res.status(403).json({ error: "Unité non autorisée" });
+    if (!allowed.includes(unit)) return res.status(403).json({ error: "Localisation non autorisée" });
     const machineRows = await supabaseRequest("machines", { query: `?select=tag,unite,actif&tag=eq.${encodeURIComponent(machine)}&limit=1` });
-    if (!machineRows[0] || machineRows[0].unite !== unit || Number(machineRows[0].actif) !== 1) return res.status(400).json({ error: "Machine et unité incohérentes" });
+    if (!machineRows[0] || machineRows[0].unite !== unit || Number(machineRows[0].actif) !== 1) return res.status(400).json({ error: "Machine et localisation incohérentes" });
     const hours = Number(req.body.heures_marche);
     if (!Number.isFinite(hours) || hours < 0 || hours > 24) return res.status(400).json({ error: "Heures de marche invalides" });
     const failures = await supabaseRequest("pannes", { query: `?select=downtime&machine=eq.${encodeURIComponent(machine)}&date_panne=eq.${encodeURIComponent(date)}` });
@@ -1105,10 +1106,10 @@ app.post("/api/pm", requireAuth, async (req, res) => {
     const unit = String(req.body.unite || "");
     const tag = String(req.body.machine_tag || "");
     const allowed = await allowedUnitsForUser(req.user);
-    if (!allowed.includes(unit)) return res.status(403).json({ error: "Unité non autorisée" });
+    if (!allowed.includes(unit)) return res.status(403).json({ error: "Localisation non autorisée" });
     const machines = await supabaseRequest("machines", { query: `?select=tag,designation,unite,groupe&tag=eq.${encodeURIComponent(tag)}&actif=eq.1&limit=1` });
     const machine = machines[0];
-    if (!machine || machine.unite !== unit) return res.status(400).json({ error: "Machine et unité incohérentes" });
+    if (!machine || machine.unite !== unit) return res.status(400).json({ error: "Machine et localisation incohérentes" });
     const date = String(req.body.date_prevue || "");
     const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!match || !req.body.frequence) return res.status(400).json({ error: "Date et fréquence obligatoires" });
@@ -1154,7 +1155,7 @@ app.post("/api/pm/:id/realiser", requireAuth, async (req, res) => {
     if (!pm) return res.status(404).json({ error: "PM introuvable" });
     if (pm.statut !== "Planifiée") return res.status(400).json({ error: "Cette PM n'est pas planifiée" });
     const allowed = await allowedUnitsForUser(req.user);
-    if (!allowed.includes(pm.unite)) return res.status(403).json({ error: "Unité non autorisée" });
+    if (!allowed.includes(pm.unite)) return res.status(403).json({ error: "Localisation non autorisée" });
     if (isElectrician(req.user) && !electricPM(pm,await electricServiceNames())) return res.status(403).json({ error: "PM réservée à un autre service" });
     const startText = String(req.body.date_debut || "").replace("T", " ").slice(0,16);
     const endText = String(req.body.date_fin || "").replace("T", " ").slice(0,16);
@@ -1296,14 +1297,14 @@ async function syncEffectifToSupabase(employee) {
 
 const EF_SITES = ["Site 01", "Site 02"];
 const EF_BOTH = "Site 01; Site 02";
-const efSiteUnit = unit => /^(U6|U06|SG02)$/i.test(String(unit || "").trim()) ? "Site 02" : "Site 01";
+const efSiteUnit = localisationSite;
 function effectifRHPayload(body) {
   const units = body.toutes_unites ? [] : [...new Set((Array.isArray(body.units) ? body.units : []).map(x => String(x).trim()).filter(Boolean))];
   const affected = body.toutes_unites || body.is_admin ? EF_SITES : EF_SITES.filter(s => units.some(u => efSiteUnit(u) === s));
   const derived = affected.join("; ");
   const requested = String(body.site || "").trim();
   if (requested && ![...EF_SITES, EF_BOTH].includes(requested)) throw new Error("Site invalide.");
-  if (derived && requested && derived !== requested) throw new Error("Le site ne correspond pas aux unités affectées.");
+  if (derived && requested && derived !== requested) throw new Error("Le site ne correspond pas aux localisations affectées.");
   const type = String(body.type_contrat || "").trim().toUpperCase() || null;
   const end = String(body.date_fin_contrat || "").trim() || null;
   if (type && !["CDI", "CDD"].includes(type)) throw new Error("Type de contrat invalide.");
@@ -1429,10 +1430,10 @@ app.post("/api/pannes", requireAuth, async (req, res) => {
     const missing = required.filter(key => String(body[key] ?? "").trim() === "");
     if (missing.length) return res.status(400).json({ error: `Champs obligatoires manquants : ${missing.join(", ")}` });
     const allowed = await allowedUnitsForUser(req.user);
-    if (!allowed.includes(body.unite)) return res.status(403).json({ error: "Unité non autorisée" });
+    if (!allowed.includes(body.unite)) return res.status(403).json({ error: "Localisation non autorisée" });
     const machineRows = await supabaseRequest("machines", { query: `?select=tag,unite,zone&tag=eq.${encodeURIComponent(body.machine)}&limit=1` });
     const machine = machineRows[0];
-    if (!machine || machine.unite !== body.unite) return res.status(400).json({ error: "Machine et unité incohérentes" });
+    if (!machine || machine.unite !== body.unite) return res.status(400).json({ error: "Machine et localisation incohérentes" });
     const duplicate = await supabaseRequest("pannes", { query: `?select=id&wo=eq.${encodeURIComponent(String(body.wo).trim())}&limit=1` });
     if (duplicate.length) return res.status(409).json({ error: "Ce numéro WO existe déjà" });
     const split = value => {
@@ -1516,7 +1517,7 @@ app.put("/api/tables/pannes/:id", requireAuth, async (req, res) => {
     if (isElectrician(req.user) && !electricPanne(panne,await electricServiceNames())) return res.status(403).json({ error: "Panne réservée à un autre service" });
     const machineTag = String(req.body.machine ?? panne.machine);
     const machine = await supabaseRequest("machines", { query: `?select=tag,unite&tag=eq.${encodeURIComponent(machineTag)}&limit=1` });
-    if (!machine[0] || machine[0].unite !== targetUnit) return res.status(400).json({ error: "Machine et unité incohérentes" });
+    if (!machine[0] || machine[0].unite !== targetUnit) return res.status(400).json({ error: "Machine et localisation incohérentes" });
     const allowedFields = ["wo","date_panne","heure_panne","date_debut","date_fin","unite","machine","probleme","area","service","mois","technicien","downtime","statut","commentaire","pieces_consommees"];
     const payload = Object.fromEntries(Object.entries(req.body).filter(([key])=>allowedFields.includes(key)));
     if (req.user.role !== "admin") {
@@ -1550,8 +1551,38 @@ app.get("/api/tables/:table", requireAuth, async (req, res) => {
 
 
 
+
+async function validateMachineLocation(body){
+  const site=String(body.site||"").trim();
+  const loc=String(body.unite||"").trim();
+  if(!SITES.includes(site))throw new Error("Site obligatoire : Site 01 ou Site 02.");
+  if(!loc||localisationSite(loc)!==site)throw new Error("La localisation doit correspondre au site choisi.");
+  const refs=await desktopSettings.list();
+  const valid=refs.some(x=>x.type_liste==="unite"&&x.valeur===loc&&x.actif);
+  // When editing a legacy location, the existing machine list may contain a
+  // code not yet registered in the shared settings. Preserve it when used.
+  if(!valid){
+    const existing=await supabaseRequest("machines",{query:"?select=id&unite=eq."+encodeURIComponent(loc)+"&limit=1"});
+    if(!existing.length)throw new Error("Localisation non référencée dans Paramètres.");
+  }
+  return {site,unite:loc};
+}
+
 app.post("/api/tables/:table", requireAuth, async (req, res) => {
   const table = req.params.table;
+  if(table==="machines"){
+    if(req.user.role!=="admin")return res.status(403).json({error:"Réservé aux administrateurs."});
+    try{
+      const tag=String(req.body.tag||"").trim(),designation=String(req.body.designation||"").trim();
+      if(!tag||!designation)return res.status(400).json({error:"Tag et désignation obligatoires."});
+      const location=await validateMachineLocation(req.body);
+      const duplicate=await supabaseRequest("machines",{query:"?select=id&tag=eq."+encodeURIComponent(tag)+"&limit=1"});
+      if(duplicate.length)return res.status(409).json({error:"Ce tag machine existe déjà."});
+      const body=machineFieldsFromBody({...req.body,...location},true);
+      const rows=await supabaseRequest("machines",{method:"POST",query:"?select=*",prefer:"return=representation",body:[body]});
+      return res.status(201).json(rows?.[0]||body);
+    }catch(e){return res.status(400).json({error:"Machine : "+e.message});}
+  }
   if (table === "sop") {
     try {
       const payload = {
@@ -1576,6 +1607,31 @@ app.post("/api/tables/:table", requireAuth, async (req, res) => {
 
 app.put("/api/tables/:table/:id", requireAuth, async (req, res) => {
   const table = req.params.table;
+  if(table==="machines"){
+    if(req.user.role!=="admin")return res.status(403).json({error:"Réservé aux administrateurs."});
+    try{
+      const found=await supabaseRequest("machines",{query:"?select=*&id=eq."+encodeURIComponent(req.params.id)+"&limit=1"});
+      if(!found.length)return res.status(404).json({error:"Machine introuvable."});
+      const location=await validateMachineLocation({...found[0],...req.body});
+      const tag=String(req.body.tag??found[0].tag).trim(),designation=String(req.body.designation??found[0].designation).trim();
+      if(!tag||!designation)return res.status(400).json({error:"Tag et désignation obligatoires."});
+      // Changing the machine tag would disconnect all historical WO/PM/OT links.
+      if(tag!==found[0].tag)return res.status(409).json({error:"Le tag d'une machine existante ne peut pas être changé : historique lié."});
+      const newLoc=location.unite;
+      if(newLoc!==found[0].unite){
+        const [pannes,pm,ot]=await Promise.all([
+          supabaseRequest("pannes",{query:"?select=id&machine=eq."+encodeURIComponent(tag)+"&limit=1"}),
+          supabaseRequest("pm_programmees",{query:"?select=id&machine_tag=eq."+encodeURIComponent(tag)+"&limit=1"}),
+          supabaseRequest("operating_time",{query:"?select=id&machine=eq."+encodeURIComponent(tag)+"&limit=1"})
+        ]);
+        if(pannes.length||pm.length||ot.length)
+          return res.status(409).json({error:"Cette machine possède un historique : sa localisation ne peut pas être changée sans migration des interventions associées."});
+      }
+      const payload=machineFieldsFromBody({...req.body,...location},false);
+      const rows=await supabaseRequest("machines",{method:"PATCH",query:"?id=eq."+encodeURIComponent(req.params.id)+"&select=*",prefer:"return=representation",body:payload});
+      return res.json(rows?.[0]||{...found[0],...payload});
+    }catch(e){return res.status(400).json({error:"Modification machine : "+e.message});}
+  }
   if (table === "sop") {
     try {
       const allowed = ["code","titre","version","machine","unite","date_application","date_revision","validateur","chemin_fichier","commentaire","actif"];
@@ -1592,6 +1648,22 @@ app.put("/api/tables/:table/:id", requireAuth, async (req, res) => {
 
 
 app.delete("/api/tables/:table/:id", requireAuth, async (req, res) => {
+  if(req.params.table==="machines"){
+    if(req.user.role!=="admin")return res.status(403).json({error:"Réservé aux administrateurs."});
+    try{
+      const found=await supabaseRequest("machines",{query:"?select=tag&id=eq."+encodeURIComponent(req.params.id)+"&limit=1"});
+      if(!found.length)return res.status(404).json({error:"Machine introuvable."});
+      const tag=found[0].tag;
+      const deps=await Promise.all([
+        supabaseRequest("pannes",{query:"?select=id&machine=eq."+encodeURIComponent(tag)+"&limit=1"}),
+        supabaseRequest("pm_programmees",{query:"?select=id&machine_tag=eq."+encodeURIComponent(tag)+"&limit=1"}),
+        supabaseRequest("operating_time",{query:"?select=id&machine=eq."+encodeURIComponent(tag)+"&limit=1"})
+      ]);
+      if(deps.some(rows=>rows.length))return res.status(409).json({error:"Machine liée à des pannes, PM ou relevés : suppression interdite."});
+      await supabaseRequest("machines",{method:"DELETE",query:"?id=eq."+encodeURIComponent(req.params.id)});
+      return res.json({ok:true});
+    }catch(e){return res.status(502).json({error:e.message});}
+  }
   if (req.params.table !== "sop") return res.status(400).json({ error: "Suppression non prise en charge pour cette table" });
   try {
     await supabaseRequest("sop", { method: "DELETE", query: `?id=eq.${encodeURIComponent(req.params.id)}` });
