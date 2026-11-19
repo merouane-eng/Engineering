@@ -177,7 +177,7 @@ test("Templates XLSX : les cinq modules ont tous leurs champs sans données",asy
       {params:{module,action:"template"}});
     assert.equal(response.statusCode,200,module+" "+response.body?.error);
     const rows=readXlsx(response.binary);
-    assert.deepEqual(rows[0],EXCEL_MODULES[module].fields);
+    assert.deepEqual(rows[0],EXCEL_MODULES[module].fields.map(x=>x==="unite"?"Localisation":x==="unites"?"Localisations":x));
     assert.equal(rows.length,1);
   }
 });
