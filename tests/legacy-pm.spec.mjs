@@ -48,7 +48,7 @@ for(const viewport of [{width:390,height:844},{width:1366,height:768}]){
   await expect(page.locator(".pm-legacy-preview")).toHaveCount(0);
   expect(mutations.length).toBe(0);
   await page.locator(".pm-legacy-fields select").first().selectOption("U4");
-  await page.locator(".pm-legacy-fields select").nth(1).selectOption("Maintenance");
+  await page.locator(".pm-legacy-fields select").nth(2).selectOption("Maintenance");
   await page.getByRole("button",{name:"Prévisualiser les PM non attribuées"}).click();
   await expect(page.locator(".pm-legacy-preview")).toContainText("265 PM sans département");
   await expect(page.locator(".pm-legacy-preview")).toContainText("Réalisée : 265");
@@ -56,7 +56,7 @@ for(const viewport of [{width:390,height:844},{width:1366,height:768}]){
   await page.getByRole("button",{name:"Confirmer l'attribution au département"}).click();
   await expect(page.locator(".pm-legacy-notice")).toContainText("265 PM attribuées");
   expect(mutations).toHaveLength(1);
-  expect(mutations[0]).toEqual({unite:"U4",service_intervenant:"Maintenance",expected_count:265});
+  expect(mutations[0]).toEqual({unite:"U4",machine_tag:"",service_intervenant:"Maintenance",expected_count:265});
   expect(errors).toEqual([]);
   await context.close();
  });
