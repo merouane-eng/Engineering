@@ -40,15 +40,15 @@ const fieldsByModule = {
     ["fonction", "Fonction"], ["telephone", "Téléphone"], ["email", "Email"], ["actif", "Actif", true]
   ],
   saisie: [
-    ["wo", "WO"], ["date_panne", "Date panne", "date"], ["unite", "Unité"], ["machine", "Machine"],
+    ["wo", "WO"], ["date_panne", "Date panne", "date"], ["unite", "Localisation"], ["machine", "Machine"],
     ["probleme", "Problème"], ["service", "Service"], ["statut", "Statut"], ["technicien", "Technicien"]
   ],
   liste: [
-    ["wo", "WO"], ["date_panne", "Date panne", "date"], ["unite", "Unité"], ["service", "Département"], ["area", "Area"], ["machine", "Machine"],
+    ["wo", "WO"], ["date_panne", "Date panne", "date"], ["unite", "Localisation"], ["service", "Département"], ["area", "Area"], ["machine", "Machine"],
     ["probleme", "Problème"], ["technicien", "Technicien"], ["statut", "Statut"], ["commentaire", "Commentaire"], ["pieces_consommees", "Pièces consommées"]
   ],
   pm: [
-    ["machine_tag", "Machine"], ["machine_designation", "Désignation"], ["unite", "Unité"],
+    ["machine_tag", "Machine"], ["machine_designation", "Désignation"], ["unite", "Localisation"],
     ["frequence", "Fréquence"], ["date_prevue", "Date prévue", "date"], ["responsable", "Responsable"], ["statut", "Statut"]
   ],
   operating: [
@@ -155,9 +155,9 @@ function Dashboard({ user, onNavigate }) {
     <section className="dashboardKpis">{cards.map(([label,value,Icon,tone,note])=><article className="dashboardKpi" key={label}><div className="dashboardKpiTop"><span className={"dashboardKpiIcon "+tone}><Icon/></span><span className="dashboardKpiArrow"><ArrowUpRight/></span></div><strong>{loading&&!data?"—":value??0}</strong><span className="dashboardKpiLabel">{label}</span><small>{note}</small></article>)}</section>
     <section className="dashboardLower">
       <article className="dashboardPanel"><div className="dashboardPanelHead"><div><span className="eyebrow">SUIVI OPÉRATIONNEL</span><h3>Dernières pannes</h3></div><button onClick={()=>onNavigate("liste")}>Tout voir <ArrowUpRight/></button></div>
-      {data?.recentPannes?.length?<div className="dashboardRows">{data.recentPannes.map((row,index)=><div className="dashboardRow" key={row.id||row.wo||index}><span className={row.statut==="Close"?"rowStatus closed":"rowStatus open"}>{row.statut==="Close"?<CheckCircle2/>:<CircleAlert/>}</span><div className="dashboardRowMain"><strong>{row.machine||"Machine non précisée"}</strong><span>{row.wo?"WO "+row.wo+" · ":""}{row.probleme||"Intervention de maintenance"}</span></div><div className="dashboardRowMeta"><span>{formatDate(row.date_panne)}</span><small>{row.unite||"—"}</small></div></div>)}</div>:<div className="dashboardEmpty"><ClipboardList/><strong>Aucune panne récente à afficher</strong><span>Les nouvelles déclarations apparaîtront ici.</span></div>}</article>
+      {data?.recentPannes?.length?<div className="dashboardRows">{data.recentPannes.map((row,index)=><div className="dashboardRow" key={row.id||row.wo||index}><span className={row.statut==="Close"?"rowStatus closed":"rowStatus open"}>{row.statut==="Close"?<CheckCircle2/>:<CircleAlert/>}</span><div className="dashboardRowMain"><strong>{row.machine||"Machine non précisée"}</strong><span>{row.wo?"WO "+row.wo+" · ":""}{row.probleme||"Intervention de maintenance"}</span></div><div className="dashboardRowMeta"><span>{formatDate(row.date_panne)}</span><small>{localisationName(row.unite,{withSite:true})}</small></div></div>)}</div>:<div className="dashboardEmpty"><ClipboardList/><strong>Aucune panne récente à afficher</strong><span>Les nouvelles déclarations apparaîtront ici.</span></div>}</article>
       <article className="dashboardPanel"><div className="dashboardPanelHead"><div><span className="eyebrow">ANTICIPER LES ARRÊTS</span><h3>Maintenance préventive</h3></div><button onClick={()=>onNavigate("pm")}>Planning <ArrowUpRight/></button></div>
-      {data?.upcomingPM?.length?<div className="dashboardRows">{data.upcomingPM.map((row,index)=><div className="dashboardRow" key={row.id||row.machine_tag||index}><span className="pmDate"><strong>{new Date(row.date_prevue+"T00:00:00").getDate()}</strong><small>{new Intl.DateTimeFormat(languageForUI(),{month:"short"}).format(new Date(row.date_prevue+"T00:00:00"))}</small></span><div className="dashboardRowMain"><strong>{row.machine_tag||"Machine"}</strong><span>{row.frequence||"Maintenance préventive"} · {row.unite||"—"}</span></div><span className="pmBadge">{row.statut||"Planifiée"}</span></div>)}</div>:<div className="dashboardEmpty"><CalendarClock/><strong>Aucune PM à venir</strong><span>Le planning préventif est à jour.</span></div>}</article>
+      {data?.upcomingPM?.length?<div className="dashboardRows">{data.upcomingPM.map((row,index)=><div className="dashboardRow" key={row.id||row.machine_tag||index}><span className="pmDate"><strong>{new Date(row.date_prevue+"T00:00:00").getDate()}</strong><small>{new Intl.DateTimeFormat(languageForUI(),{month:"short"}).format(new Date(row.date_prevue+"T00:00:00"))}</small></span><div className="dashboardRowMain"><strong>{row.machine_tag||"Machine"}</strong><span>{row.frequence||"Maintenance préventive"} · {localisationName(row.unite,{withSite:true})}</span></div><span className="pmBadge">{row.statut||"Planifiée"}</span></div>)}</div>:<div className="dashboardEmpty"><CalendarClock/><strong>Aucune PM à venir</strong><span>Le planning préventif est à jour.</span></div>}</article>
     </section>
     <section className="dashboardQuick"><div className="dashboardQuickTitle"><span className="eyebrow">ACCÈS RAPIDE</span><h3>Que souhaitez-vous faire ?</h3></div><div className="dashboardQuickGrid">
       <button onClick={()=>onNavigate("saisie")}><span className="quickIcon orange"><PlusCircle/></span><span><strong>Déclarer une panne</strong><small>Créer un nouvel ordre de travail</small></span><ArrowUpRight/></button>
@@ -170,7 +170,7 @@ function Dashboard({ user, onNavigate }) {
 }
 function StatsAncien() {
   const [dataset,setDataset]=useState({pannes:[],pm:[],operating:[],machines:[],units:[]});
-  const [period,setPeriod]=useState("30"),[unit,setUnit]=useState("Toutes les unités"),[loading,setLoading]=useState(true),[error,setError]=useState("");
+  const [period,setPeriod]=useState("30"),[unit,setUnit]=useState("Toutes les localisations"),[loading,setLoading]=useState(true),[error,setError]=useState("");
   const load=async()=>{
     setLoading(true);setError("");
     const names=["liste","pm","operating","machines","operating/context"],keys=["pannes","pm","operating","machines","units"];
@@ -187,10 +187,10 @@ function StatsAncien() {
   const cutoff=new Date(today);cutoff.setHours(0,0,0,0);
   if(period!=="all")cutoff.setDate(cutoff.getDate()-(period==="year"?364:Number(period)-1));
   const inPeriod=value=>{const d=dateOf(value);return d&&d<=new Date(todayKey+"T23:59:59")&&(period==="all"||d>=cutoff);};
-  const inUnit=row=>unit==="Toutes les unités"||row.unite===unit;
+  const inUnit=row=>unit==="Toutes les localisations"||row.unite===unit;
   const pannes=dataset.pannes.filter(row=>inUnit(row)&&inPeriod(row.date_panne));
   const pm=dataset.pm.filter(row=>inUnit(row)&&inPeriod(row.date_prevue));
-  const operating=dataset.operating.filter(row=>inPeriod(row.date_jour)&&dataset.machines.some(machine=>machine.tag===row.machine&&dataset.units.includes(machine.unite)&&(unit==="Toutes les unités"||machine.unite===unit)));
+  const operating=dataset.operating.filter(row=>inPeriod(row.date_jour)&&dataset.machines.some(machine=>machine.tag===row.machine&&dataset.units.includes(machine.unite)&&(unit==="Toutes les localisations"||machine.unite===unit)));
   const open=pannes.filter(row=>String(row.statut||"").toLowerCase()!=="close");
   const closed=pannes.filter(row=>String(row.statut||"").toLowerCase()==="close");
   const realized=["réalisée","realisee","non conforme"];
@@ -207,7 +207,7 @@ function StatsAncien() {
   const mttr=closed.length?closedDowntime/closed.length:null;
   const mtbf=pannes.length?operatingHours/pannes.length:null;
   const fmt=value=>new Intl.NumberFormat(languageForUI(),{maximumFractionDigits:1}).format(value);
-  const units=["Toutes les unités",...dataset.units].sort((a,b)=>a.localeCompare(b,"fr"));
+  const units=["Toutes les localisations",...dataset.units].sort((a,b)=>a.localeCompare(b,"fr"));
   const months=Array.from({length:6},(_,i)=>{const d=new Date(today.getFullYear(),today.getMonth()-5+i,1);return {key:d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"),label:new Intl.DateTimeFormat(languageForUI(),{month:"short"}).format(d)};});
   const monthly=months.map(m=>({...m,count:dataset.pannes.filter(r=>inUnit(r)&&String(r.date_panne||"").slice(0,7)===m.key).length}));
   const maxMonth=Math.max(1,...monthly.map(m=>m.count));
@@ -229,7 +229,7 @@ function StatsAncien() {
   ];
   return <div className="statsPage">
     <div className="statsHero"><div><span className="eyebrow">ENGINEERING · PERFORMANCE & FIABILITÉ</span><h1>Centre de pilotage</h1><p>Une vision consolidée de la performance de maintenance, des arrêts et du préventif.</p><div className="statsHeroMeta"><span><Activity/> Analyse opérationnelle</span><span><CalendarDays/> {new Intl.DateTimeFormat(languageForUI(),{day:"2-digit",month:"long",year:"numeric"}).format(today)}</span></div></div><div className="statsHeroMark"><div className="statsHeroOrbit"/><div className="statsHeroIcon"><BarChart3/></div><span>ENGINEERING</span></div></div>
-    <div className="statsToolbar"><div className="statsFilterGroup"><label><CalendarDays/> Période</label><div className="statsPeriod">{[["7","7 jours"],["30","30 jours"],["90","90 jours"],["year","12 mois"],["all","Tout"]].map(([v,l])=><button key={v} className={period===v?"active":""} onClick={()=>setPeriod(v)}>{l}</button>)}</div></div><div className="statsFilterGroup statsUnitFilter"><label><Filter/> Unité</label><select value={unit} onChange={e=>setUnit(e.target.value)}>{units.map(v=><option key={v}>{v}</option>)}</select></div><button className="statsReload" onClick={load} disabled={loading}><Activity/> {loading?"Chargement…":"Actualiser"}</button></div>
+    <div className="statsToolbar"><div className="statsFilterGroup"><label><CalendarDays/> Période</label><div className="statsPeriod">{[["7","7 jours"],["30","30 jours"],["90","90 jours"],["year","12 mois"],["all","Tout"]].map(([v,l])=><button key={v} className={period===v?"active":""} onClick={()=>setPeriod(v)}>{l}</button>)}</div></div><div className="statsFilterGroup statsUnitFilter"><label><Filter/> Localisation</label><select value={unit} onChange={e=>setUnit(e.target.value)}>{units.map(v=><option key={v} value={v}>{localisationName(v,{withSite:true})}</option>)}</select></div><button className="statsReload" onClick={load} disabled={loading}><Activity/> {loading?"Chargement…":"Actualiser"}</button></div>
     {error&&<div className="statsNotice"><CircleAlert/>{error}<button onClick={load}>Réessayer</button></div>}
     <div className="statsSectionTitle"><div><span className="eyebrow">SYNTHÈSE DE PERFORMANCE</span><h2>Indicateurs clés</h2></div><span className="statsScope">{unit} · {period==="all"?"Toutes les périodes":period==="year"?"12 derniers mois":"Derniers "+period+" jours"}</span></div>
     <section className="statsKpiGrid">{cards.map(([label,value,detail,Icon,tone])=><article className="statsKpi" key={label}><div className="statsKpiTop"><span className={"statsKpiIcon "+tone}><Icon/></span><span className="statsKpiTag">KPI</span></div><strong>{loading?"—":value}</strong><b>{label}</b><small>{detail}</small></article>)}</section>
@@ -239,7 +239,7 @@ function StatsAncien() {
       <article className="statsPanel"><div className="statsPanelHead"><div><span className="eyebrow">ANALYSE ÉQUIPEMENT</span><h3>Machines les plus en panne</h3><p>Top 6 sur la période sélectionnée</p></div><span className="statsPanelIcon"><Wrench/></span></div>{topMachines.length?<div className="statsRanking">{topMachines.map(([name,value],i)=><div className="statsRankRow" key={name}><span className="statsRankNumber">{String(i+1).padStart(2,"0")}</span><div className="statsRankBody"><div><strong>{name}</strong><b>{value}</b></div><span className="statsRankTrack"><i style={{width:value/maxMachine*100+"%"}}/></span></div></div>)}</div>:<div className="statsEmpty">Aucune panne sur cette sélection.</div>}</article>
       <article className="statsPanel"><div className="statsPanelHead"><div><span className="eyebrow">MAINTENANCE PRÉVENTIVE</span><h3>Respect du planning PM</h3><p>État des interventions préventives</p></div><span className="statsPanelIcon"><CalendarClock/></span></div><div className="statsPmSummary"><div><strong>{pm.length}</strong><span>PM planifiées</span></div><div><strong>{completedPM.length}</strong><span>Réalisées</span></div><div><strong>{overduePM.length}</strong><span>En retard</span></div></div><div className="statsProgress"><div><span>Taux de réalisation</span><strong>{fmt(pmRate)}%</strong></div><span className="statsProgressTrack"><i className="pm" style={{width:Math.min(100,pmRate)+"%"}}/></span></div><div className="statsPmFoot"><span><span className="statsLegendDot closed"/> Réalisées</span><span><span className="statsLegendDot open"/> À suivre</span></div></article>
     </section>
-    <section className="statsBottomGrid"><article className="statsPanel statsInsight"><span className="statsInsightIcon"><Gauge/></span><div><span className="eyebrow">FIABILITÉ & DISPONIBILITÉ</span><h3>Lecture des indicateurs</h3><p>{availability===null?"La disponibilité sera calculée dès que des heures planifiées et des heures de marche seront enregistrées dans Operating Time.":"La disponibilité calculée sur les relevés Operating Time est de "+fmt(availability)+" %. Elle repose sur les heures de marche et les heures planifiées renseignées."}</p><p>{mttr===null?"Le MTTR sera disponible après clôture des premiers ordres de travail avec une durée d’arrêt renseignée.":"Le MTTR moyen observé est de "+fmt(mttr)+" minutes sur "+closed.length+" panne(s) clôturée(s)."}</p></div></article><article className="statsPanel"><div className="statsPanelHead"><div><span className="eyebrow">PÉRIMÈTRE</span><h3>Ressources suivies</h3></div><span className="statsPanelIcon"><Users/></span></div><div className="statsResourceRows"><div><Wrench/><span>Machines actives</span><strong>{dataset.machines.filter(r=>dataset.units.includes(r.unite)&&Number(r.actif)===1&&(unit==="Toutes les unités"||r.unite===unit)).length}</strong></div><div><CalendarClock/><span>Relevés Operating Time</span><strong>{operating.length}</strong></div></div></article></section>
+    <section className="statsBottomGrid"><article className="statsPanel statsInsight"><span className="statsInsightIcon"><Gauge/></span><div><span className="eyebrow">FIABILITÉ & DISPONIBILITÉ</span><h3>Lecture des indicateurs</h3><p>{availability===null?"La disponibilité sera calculée dès que des heures planifiées et des heures de marche seront enregistrées dans Operating Time.":"La disponibilité calculée sur les relevés Operating Time est de "+fmt(availability)+" %. Elle repose sur les heures de marche et les heures planifiées renseignées."}</p><p>{mttr===null?"Le MTTR sera disponible après clôture des premiers ordres de travail avec une durée d’arrêt renseignée.":"Le MTTR moyen observé est de "+fmt(mttr)+" minutes sur "+closed.length+" panne(s) clôturée(s)."}</p></div></article><article className="statsPanel"><div className="statsPanelHead"><div><span className="eyebrow">PÉRIMÈTRE</span><h3>Ressources suivies</h3></div><span className="statsPanelIcon"><Users/></span></div><div className="statsResourceRows"><div><Wrench/><span>Machines actives</span><strong>{dataset.machines.filter(r=>dataset.units.includes(r.unite)&&Number(r.actif)===1&&(unit==="Toutes les localisations"||r.unite===unit)).length}</strong></div><div><CalendarClock/><span>Relevés Operating Time</span><strong>{operating.length}</strong></div></div></article></section>
     <div className="statsFooter"><span>ENGINEERING · Tableau de bord statistique</span><span>Indicateurs calculés à partir des enregistrements disponibles</span></div>
   </div>;
 }
@@ -333,7 +333,7 @@ function DataPage({ module, user }) {
       </section>
       <section className="bl-filters">
         <div className="bl-search"><Search/><input placeholder="Rechercher WO, machine, problème..." value={query} onChange={e=>setQuery(e.target.value)}/></div>
-        <div className="bl-filter"><label>Unité</label><select value={unitFilter} onChange={e=>setUnitFilter(e.target.value)}><option value="">Toutes les unités</option>{units.map(v=><option key={v}>{v}</option>)}</select></div>
+        <div className="bl-filter"><label>Localisation</label><select value={unitFilter} onChange={e=>setUnitFilter(e.target.value)}><option value="">Toutes les localisations</option>{units.map(v=><option key={v} value={v}>{localisationName(v,{withSite:true})}</option>)}</select></div>
         <div className="bl-filter"><label>Département</label><select value={departmentFilter} onChange={e=>setDepartmentFilter(e.target.value)}><option value="">Tous les départements</option>{departments.map(v=><option key={v}>{v}</option>)}</select></div>
         <div className="bl-filter"><label>Area / Zone</label><select value={areaFilter} onChange={e=>setAreaFilter(e.target.value)}><option value="">Toutes les areas</option>{areas.map(v=><option key={v}>{v}</option>)}</select></div>
         <div className="bl-filter"><label>Technicien</label><select value={technicianFilter} onChange={e=>setTechnicianFilter(e.target.value)}><option value="">Tous les techniciens</option>{technicians.map(v=><option key={v}>{v}</option>)}</select></div>
@@ -342,7 +342,7 @@ function DataPage({ module, user }) {
       <div className="bl-count"><span><strong>{filtered.length}</strong> panne(s) affichée(s) sur {rows.length}</span><span>Filtres cumulables · Données inchangées</span></div>
     </>}
     {module!=="liste"&&<section className="toolbar"><div className="search"><Search/><input placeholder="Rechercher..." value={query} onChange={e=>setQuery(e.target.value)}/></div><button className="primary" onClick={()=>setEditing({})}><Plus/> Ajouter</button></section>}
-    <div className="tableWrap"><table><thead><tr>{defs.map(([key,label])=><th key={key}>{label}</th>)}<th/></tr></thead><tbody>{filtered.map(row=><tr key={row.id}>{defs.map(([key])=><td key={key} className={key==="technicien"?"bl-technician-cell":""}>{key==="actif"?(row[key]?"Oui":"Non"):key==="technicien"?<span className="bl-tech"><i>{String(row[key]||"—").slice(0,1).toUpperCase()}</i>{row[key]||"—"}</span>:key==="wo"?<span className="bl-wo">{row[key]??"—"}</span>:row[key]??"—"}</td>)}<td className="actions"><button onClick={()=>setEditing(row)}>Modifier</button>{module!=="liste"&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</td></tr>)}</tbody></table>{!filtered.length&&<div className="empty">Aucun résultat</div>}</div>
+    <div className="tableWrap"><table><thead><tr>{defs.map(([key,label])=><th key={key}>{label}</th>)}<th/></tr></thead><tbody>{filtered.map(row=><tr key={row.id}>{defs.map(([key])=><td key={key} className={key==="technicien"?"bl-technician-cell":""}>{key==="actif"?(row[key]?"Oui":"Non"):key==="unite"?localisationName(row.unite,{withSite:true}):key==="technicien"?<span className="bl-tech"><i>{String(row[key]||"—").slice(0,1).toUpperCase()}</i>{row[key]||"—"}</span>:key==="wo"?<span className="bl-wo">{row[key]??"—"}</span>:row[key]??"—"}</td>)}<td className="actions"><button onClick={()=>setEditing(row)}>Modifier</button>{module!=="liste"&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</td></tr>)}</tbody></table>{!filtered.length&&<div className="empty">Aucun résultat</div>}</div>
     {editing&&<Editor fields={defs} values={editing} onClose={()=>setEditing(null)} onSave={save}/>}
   </div>;
 }
@@ -361,7 +361,7 @@ function FailureEntry({ user }) {
     api("/api/saisie/context").then(data => {
       setContext(data);
       setDraft(current => ({ ...current, unite: data.units[0] || "", technicien: data.technician, service: data.service }));
-    }).catch(() => setError("Impossible de charger les unités autorisées"));
+    }).catch(() => setError("Impossible de charger les localisations autorisées"));
   }, []);
   useEffect(() => {
     api(`/api/pieces/context${draft.machine ? `?machine=${encodeURIComponent(draft.machine)}` : ""}`)
@@ -450,10 +450,10 @@ function FailureEntry({ user }) {
         <div className="formGrid">
           <label>N° WO <span className="fm-hint">Référence de l'ordre de travail</span><input required value={draft.wo||""} onChange={e=>setDraft({...draft,wo:e.target.value})} placeholder="Ex. WO-2026-001"/></label>
           <label>Date et heure de la panne<input type="datetime-local" required value={draft.date_panne||""} onChange={e=>setDraft({...draft,date_panne:e.target.value})}/></label>
-          <label>Unité<select required value={draft.unite} onChange={e=>setDraft({...draft,unite:e.target.value,machine:""})}><option value="">Sélectionner...</option>{context.units.map(unit=><option key={unit} value={unit}>{unit}</option>)}</select></label>
+          <label>Localisation<select required value={draft.unite} onChange={e=>setDraft({...draft,unite:e.target.value,machine:""})}><option value="">Sélectionner...</option>{context.units.map(unit=><option key={unit} value={unit}>{localisationName(unit,{withSite:true})}</option>)}</select></label>
           <label>Machine<select required value={draft.machine} onChange={e=>{const tag=e.target.value;const selectedMachine=machines.find(item=>item.tag===tag);setDraft(current=>({...current,machine:tag,area:selectedMachine?.zone||""}));}}><option value="">Sélectionner une machine...</option>{machines.map(machine=><option key={machine.tag} value={machine.tag}>{machine.tag} — {machine.designation||""}</option>)}</select></label>
           <label className="fullField">Zone<input required list="failure-zones" value={draft.area} onChange={e=>setDraft({...draft,area:e.target.value})} placeholder="Zone de la machine ou saisir une zone"/><datalist id="failure-zones">{context.zones.map(zone=><option key={zone} value={zone}/>)}</datalist></label>
-        </div><div className="fm-meta"><span>Unité : <b>{draft.unite||"En attente"}</b></span><span>Machine : <b>{draft.machine||"Non sélectionnée"}</b></span></div>
+        </div><div className="fm-meta"><span>Localisation : <b>{draft.unite?localisationName(draft.unite,{withSite:true}):"En attente"}</b></span><span>Machine : <b>{draft.machine||"Non sélectionnée"}</b></span></div>
       </section>
       <section className="fm-card"><div className="fm-head"><span className="fm-icon"><CircleAlert/></span><div><h3>Description de l'anomalie</h3><p>Décrivez le défaut constaté et les circonstances.</p></div></div><div className="formGrid">
         <label className="fullField">Problème<textarea required value={draft.probleme} onChange={e=>setDraft({...draft,probleme:e.target.value})} placeholder="Décrivez le symptôme, l'anomalie ou le défaut observé..."/></label>
@@ -574,16 +574,16 @@ function EffectifAncien({ user }) {
   const activeCount=rows.filter(row=>active(row.actif)).length, inactiveCount=rows.length-activeCount;
   const resetFilters=()=>{setQuery("");setUnitFilter("");setFunctionFilter("");setDepartmentFilter("");setStatusFilter("all");};
   return <div className="effectifMaster">
-    <section className="ef-hero"><div><span className="ef-eyebrow">ENGINEERING · HUMAN RESOURCES</span><h1>Gestion des effectifs</h1><p>Une vue claire des équipes, des affectations et des compétences par unité.</p></div><div className="ef-heroIcon"><Users /></div></section>
+    <section className="ef-hero"><div><span className="ef-eyebrow">ENGINEERING · HUMAN RESOURCES</span><h1>Gestion des effectifs</h1><p>Une vue claire des équipes, des affectations et des compétences par localisation.</p></div><div className="ef-heroIcon"><Users /></div></section>
     <section className="ef-kpis">
       <article className="ef-kpi"><div className="ef-kpiTop"><span className="ef-kpiIcon blue"><Users /></span><span className="ef-kpiTag">EFFECTIF</span></div><strong>{rows.length}</strong><small>Collaborateurs enregistrés</small></article>
       <article className="ef-kpi"><div className="ef-kpiTop"><span className="ef-kpiIcon green"><CheckCircle2 /></span><span className="ef-kpiTag">DISPONIBILITÉ</span></div><strong>{activeCount}</strong><small>Collaborateurs actifs</small></article>
       <article className="ef-kpi"><div className="ef-kpiTop"><span className="ef-kpiIcon violet"><Layers /></span><span className="ef-kpiTag">ORGANISATION</span></div><strong>{departmentOptions.length}</strong><small>Départements représentés</small></article>
-      <article className="ef-kpi"><div className="ef-kpiTop"><span className="ef-kpiIcon orange"><MapPin /></span><span className="ef-kpiTag">COUVERTURE</span></div><strong>{unitOptions.length}</strong><small>Unités référencées · {inactiveCount} inactif(s)</small></article>
+      <article className="ef-kpi"><div className="ef-kpiTop"><span className="ef-kpiIcon orange"><MapPin /></span><span className="ef-kpiTag">COUVERTURE</span></div><strong>{unitOptions.length}</strong><small>Localisations référencées · {inactiveCount} inactif(s)</small></article>
     </section>
     <section className="ef-toolbar">
       <div className="ef-search"><Search /><input placeholder="Rechercher un nom, matricule, email..." value={query} onChange={e=>setQuery(e.target.value)} /></div>
-      <div className="ef-filter"><label><MapPin /> Unité</label><select value={unitFilter} onChange={e=>setUnitFilter(e.target.value)}><option value="">Toutes les unités</option>{unitOptions.map(value=><option key={value} value={value}>{value}</option>)}</select></div>
+      <div className="ef-filter"><label><MapPin /> Localisation</label><select value={unitFilter} onChange={e=>setUnitFilter(e.target.value)}><option value="">Toutes les localisations</option>{unitOptions.map(value=><option key={value} value={value}>{value}</option>)}</select></div>
       <div className="ef-filter"><label><Users /> Fonction</label><select value={functionFilter} onChange={e=>setFunctionFilter(e.target.value)}><option value="">Toutes les fonctions</option>{functionOptions.map(value=><option key={value} value={value}>{value}</option>)}</select></div>
       <div className="ef-filter"><label><Layers /> Département</label><select value={departmentFilter} onChange={e=>setDepartmentFilter(e.target.value)}><option value="">Tous les départements</option>{departmentOptions.map(value=><option key={value} value={value}>{value}</option>)}</select></div>
       <div className="ef-filter"><label><Filter /> Statut</label><select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="all">Tous les statuts</option><option value="active">Actifs</option><option value="inactive">Inactifs</option></select></div>
@@ -599,7 +599,7 @@ function EffectifAncien({ user }) {
         <div className="ef-personRole"><Users /> {row.fonction||"Fonction non renseignée"}</div>
         <div className="ef-personMeta">
           <div className="ef-metaRow"><span>Département</span><strong>{row.service||"—"}</strong></div>
-          <div className="ef-metaRow"><span>Unités</span><div className="ef-unitTags">{active(row.toutes_unites)?<span>Toutes les unités</span>:units.length?units.map(value=><span key={value}>{value}</span>):<span>Non affecté</span>}</div></div>
+          <div className="ef-metaRow"><span>Localisations</span><div className="ef-unitTags">{active(row.toutes_unites)?<span>Toutes les localisations</span>:units.length?units.map(value=><span key={value}>{value}</span>):<span>Non affecté</span>}</div></div>
           <div className="ef-metaRow"><span>Téléphone</span><strong>{row.telephone||"—"}</strong></div>
           <div className="ef-metaRow"><span>Email</span><strong>{row.email||"—"}</strong></div>
         </div>
@@ -619,7 +619,7 @@ function EffectifAncien({ user }) {
         <label>Date de recrutement<input type="date" value={form.date_recrutement||""} onChange={e=>setForm({...form,date_recrutement:e.target.value})}/></label>
         <label>Date de départ<input type="date" value={form.date_depart||""} onChange={e=>setForm({...form,date_depart:e.target.value})}/></label>
       </div>
-      <fieldset className="unitPicker"><legend>Unités</legend><label><input type="checkbox" checked={Boolean(form.toutes_unites)} onChange={e=>setForm({...form,toutes_unites:e.target.checked})}/> Toutes les unités</label>
+      <fieldset className="unitPicker"><legend>Localisations</legend><label><input type="checkbox" checked={Boolean(form.toutes_unites)} onChange={e=>setForm({...form,toutes_unites:e.target.checked})}/> Toutes les localisations</label>
         {!form.toutes_unites && <div className="unitGrid">{context.units.map(unite=><label key={unite}><input type="checkbox" checked={form.units.includes(unite)} onChange={()=>toggleUnit(unite)}/> {unite}</label>)}</div>}
       </fieldset>
       <div className="formGrid"><label><input type="checkbox" checked={Boolean(form.actif)} onChange={e=>setForm({...form,actif:e.target.checked})}/> Actif</label><label><input type="checkbox" checked={Boolean(form.is_admin)} onChange={e=>setForm({...form,is_admin:e.target.checked})}/> Administrateur</label></div>
@@ -722,7 +722,7 @@ function PreventiveMaintenance({ user }) {
     </section>
     <section className="bl-filters">
       <div className="bl-search"><Search /><input aria-label="Rechercher une PM" placeholder="Rechercher machine, responsable..." value={query} onChange={e => setQuery(e.target.value)} /></div>
-      <div className="bl-filter"><label>Unité</label><select value={filterUnit} onChange={e => setFilterUnit(e.target.value)}><option value="">Toutes les unités</option>{units.map(u => <option key={u} value={u}>{u}</option>)}</select></div>
+      <div className="bl-filter"><label>Localisation</label><select value={filterUnit} onChange={e => setFilterUnit(e.target.value)}><option value="">Toutes les localisations</option>{units.map(u => <option key={u} value={u}>{localisationName(u,{withSite:true})}</option>)}</select></div>
       <div className="bl-filter"><label>Statut</label><select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="">Tous les statuts</option><option value="planned">Planifiées</option><option value="done">Réalisées</option></select></div>
       <div className="bl-filter"><label>Mois prévu</label><input aria-label="Filtrer par mois prévu" type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} /></div>
       <button className="bl-reset" onClick={resetFilters}><RotateCcw /> Réinitialiser</button>
@@ -731,9 +731,9 @@ function PreventiveMaintenance({ user }) {
     <div className="operationsActions">{canPlan && <button className="primary" onClick={openForm}><Plus /> Ajouter une PM</button>}</div>
     <div className="tableWrap">
       <table>
-        <thead><tr><th>Date prévue</th><th>Unité</th><th>Machine</th><th>Fréquence</th><th>Responsable</th><th>Service intervenant</th><th>Statut</th><th /></tr></thead>
+        <thead><tr><th>Date prévue</th><th>Localisation</th><th>Machine</th><th>Fréquence</th><th>Responsable</th><th>Service intervenant</th><th>Statut</th><th /></tr></thead>
         <tbody>{filtered.map(row => <tr key={row.id}>
-          <td>{row.date_prevue}</td><td>{row.unite}</td>
+          <td>{row.date_prevue}</td><td>{localisationName(row.unite,{withSite:true})}</td>
           <td>{row.machine_tag} — {row.machine_designation || ""}</td><td>{row.frequence}</td>
           <td>{row.responsable || "—"}</td>
           <td>{user.role==="admin" ? <div className="pm-serviceAssign"><select aria-label={"Service de la PM "+row.id} value={serviceDrafts[row.id] ?? row.service_intervenant ?? ""} onChange={e=>setServiceDrafts(old=>({...old,[row.id]:e.target.value}))}><option value="">Non attribuée</option>{[...new Set([...servicesPM,row.service_intervenant].filter(Boolean))].map(s=><option key={s} value={s}>{s}</option>)}</select><button type="button" onClick={()=>assignService(row)} title="Enregistrer le service intervenant">Valider</button></div> : (row.service_intervenant||"—")}</td><td>{row.statut}</td>
@@ -746,7 +746,7 @@ function PreventiveMaintenance({ user }) {
     {form && <div className="modalBack"><form className="modal" onSubmit={save}>
       <div className="modalHead"><h3>Programmer une PM</h3><button type="button" className="iconButton" onClick={() => setForm(null)}><X /></button></div>
       <div className="formGrid">
-        <label>Unité<select required value={form.unite} onChange={e => setForm({ ...form, unite: e.target.value, machine_tag: "" })}><option value="">Sélectionner...</option>{context.units.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>
+        <label>Localisation<select required value={form.unite} onChange={e => setForm({ ...form, unite: e.target.value, machine_tag: "" })}><option value="">Sélectionner...</option>{context.units.map(unit => <option key={unit} value={unit}>{localisationName(unit,{withSite:true})}</option>)}</select></label>
         <label>Machine<select required value={form.machine_tag} onChange={e => {
           const machine = filteredMachines.find(item => item.tag === e.target.value);
           setForm(current => ({ ...current, machine_tag: e.target.value, unite: machine?.unite || current.unite }));
@@ -763,7 +763,7 @@ function PreventiveMaintenance({ user }) {
     {realization && <div className="modalBack"><form className="modal" onSubmit={realize}>
       <div className="modalHead"><h3>Réaliser la PM — {realization.machine_tag}</h3><button type="button" className="iconButton" onClick={() => setRealization(null)}><X /></button></div>
       <div className="formGrid">
-        <label>Unité<input value={realization.unite} disabled /></label>
+        <label>Localisation<input value={localisationName(realization.unite,{withSite:true})} disabled /></label>
         <label>Machine<input value={`${realization.machine_tag} — ${realization.machine_designation || ""}`} disabled /></label>
         <label>Technicien{user.role === "admin"
           ? <select required value={realizationDraft.technicien} onChange={e => setRealizationDraft({ ...realizationDraft, technicien: e.target.value })}><option value="">Sélectionner...</option>{context.technicians.map(technician => <option key={technician.id} value={technician.name}>{technician.name}</option>)}</select>
@@ -849,7 +849,7 @@ function OperatingTime({ user }) {
     </section>
     <section className="bl-filters">
       <div className="bl-search"><Search /><input aria-label="Rechercher une saisie" placeholder="Rechercher machine, commentaire..." value={query} onChange={e => setQuery(e.target.value)} /></div>
-      <div className="bl-filter"><label>Unité</label><select value={filterUnit} onChange={e => {setFilterUnit(e.target.value);setFilterMachine("");}}><option value="">Toutes les unités</option>{units.map(u=><option key={u} value={u}>{u}</option>)}</select></div>
+      <div className="bl-filter"><label>Localisation</label><select value={filterUnit} onChange={e => {setFilterUnit(e.target.value);setFilterMachine("");}}><option value="">Toutes les localisations</option>{units.map(u=><option key={u} value={u}>{u}</option>)}</select></div>
       <div className="bl-filter"><label>Machine</label><select value={filterMachine} onChange={e => setFilterMachine(e.target.value)}><option value="">Toutes les machines</option>{machines.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
       <div className="bl-filter"><label>Mois</label><input aria-label="Filtrer par mois" type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} /></div>
       <button className="bl-reset" onClick={resetFilters}><RotateCcw /> Réinitialiser</button>
@@ -865,7 +865,7 @@ function OperatingTime({ user }) {
     {editing && <div className="modalBack"><form className="modal" onSubmit={save}>
       <div className="modalHead"><h3>Ajouter Operating Time</h3><button type="button" className="iconButton" onClick={() => setEditing(null)}><X /></button></div>
       <div className="formGrid">
-        <label>Unité<select required value={draft.unite} onChange={e => setDraft({ ...draft, unite: e.target.value, machine: "" })}><option value="">Sélectionner...</option>{context.units.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>
+        <label>Localisation<select required value={draft.unite} onChange={e => setDraft({ ...draft, unite: e.target.value, machine: "" })}><option value="">Sélectionner...</option>{context.units.map(unit => <option key={unit} value={unit}>{localisationName(unit,{withSite:true})}</option>)}</select></label>
         <label>Machine<select required value={draft.machine} onChange={e => setDraft({ ...draft, machine: e.target.value })}><option value="">Sélectionner...</option>{unitMachines.map(machine => <option key={machine.tag} value={machine.tag}>{machine.tag} — {machine.designation || ""}</option>)}</select></label>
         <label>Date<input required type="date" value={draft.date_jour} onChange={e => setDraft({ ...draft, date_jour: e.target.value })} /></label>
         <label>Heures<input required type="number" min="0" max="24" value={draft.hours} onChange={e => setDraft({ ...draft, hours: e.target.value })} /></label>
