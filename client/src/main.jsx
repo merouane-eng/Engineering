@@ -343,7 +343,7 @@ function DataPage({ module, user }) {
       <div className="bl-count"><span><strong>{filtered.length}</strong> panne(s) affichée(s) sur {rows.length}</span><span>Filtres cumulables · Données inchangées</span></div>
     </>}
     {module!=="liste"&&<section className="toolbar"><div className="search"><Search/><input placeholder="Rechercher..." value={query} onChange={e=>setQuery(e.target.value)}/></div><button className="primary" onClick={()=>setEditing({})}><Plus/> Ajouter</button></section>}
-    <div className="tableWrap"><table><thead><tr>{defs.map(([key,label])=><th key={key}>{label}</th>)}<th/></tr></thead><tbody>{filtered.map(row=><tr key={row.id}>{defs.map(([key])=><td key={key} className={key==="technicien"?"bl-technician-cell":""}>{key==="actif"?(row[key]?"Oui":"Non"):key==="unite"?localisationName(row.unite,{withSite:true}):key==="technicien"?<span className="bl-tech"><i>{String(row[key]||"—").slice(0,1).toUpperCase()}</i>{row[key]||"—"}</span>:key==="wo"?<span className="bl-wo">{row[key]??"—"}</span>:row[key]??"—"}</td>)}<td className="actions">{(module!=="liste"||row.peut_modifier!==false)&&<button onClick={()=>setEditing(row)}>Modifier</button>}{module!=="liste"&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</td></tr>)}</tbody></table>{!filtered.length&&<div className="empty">Aucun résultat</div>}</div>
+    <div className="tableWrap"><table><thead><tr>{defs.map(([key,label])=><th key={key}>{label}</th>)}<th/></tr></thead><tbody>{filtered.map(row=><tr key={row.id}>{defs.map(([key])=><td key={key} className={key==="technicien"?"bl-technician-cell":""}>{key==="actif"?(row[key]?"Oui":"Non"):key==="unite"?localisationName(row.unite,{withSite:true}):key==="technicien"?<span className="bl-tech"><i>{String(row[key]||"—").slice(0,1).toUpperCase()}</i>{row[key]||"—"}</span>:key==="wo"?<span className="bl-wo">{row[key]??"—"}</span>:row[key]??"—"}</td>)}<td className="actions">{(module!=="liste"||isLead(user)||row.peut_modifier===true)&&<button onClick={()=>setEditing(row)}>Modifier</button>}{module!=="liste"&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</td></tr>)}</tbody></table>{!filtered.length&&<div className="empty">Aucun résultat</div>}</div>
     {editing&&<Editor fields={module==="liste"&&!isLead(user)?defs.filter(([key])=>["probleme","area","statut","commentaire","pieces_consommees"].includes(key)):defs} values={editing} onClose={()=>setEditing(null)} onSave={save}/>}
   </div>;
 }
@@ -712,8 +712,7 @@ function PreventiveMaintenance({ user }) {
 
   return <div className="breakdownListMaster operationsMaster">
     <PageTitle title="Maintenance préventive" subtitle={filtered.length + " / " + rows.length + " PM affichée(s)"} />
-    {user.role!=="admin" && String(user.service||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="electricite" &&
-      <div className="pm-electricScope"><Wrench size={16}/> Vue Électricité — seules les PM attribuées à votre service sont visibles.</div>}
+    {!isAdmin(user)&&<div className="pm-electricScope"><Wrench size={16}/> Département : <strong>{user.service||"Non affecté"}</strong> — seules les PM de votre département et de vos localisations sont visibles.</div>}
     {error && <div className="formError">{error}</div>}
     <section className="bl-kpis">
       <article className="bl-kpi"><div className="bl-kpiTop"><span>TOTAL PM</span><span className="bl-kpiIcon bl-blue"><CalendarClock /></span></div><strong>{filtered.length}</strong><small>Maintenances filtrées</small></article>
