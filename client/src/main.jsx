@@ -771,7 +771,7 @@ function PreventiveMaintenance({ user }) {
           onClick={assignLegacy}>Confirmer l'attribution au département</button>
       </div>}
       {legacyNotice&&<p role="status" className="pm-legacy-notice">{legacyNotice}</p>}
-    </details>
+    </details>}
     {error && <div className="formError">{error}</div>}
     <section className="bl-kpis">
       <article className="bl-kpi"><div className="bl-kpiTop"><span>TOTAL PM</span><span className="bl-kpiIcon bl-blue"><CalendarClock /></span></div><strong>{filtered.length}</strong><small>Maintenances filtrées</small></article>
