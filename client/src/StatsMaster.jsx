@@ -7,6 +7,7 @@ import {
  Check,Info, Settings2, Sparkles, PieChart, Waves
 } from "lucide-react";
 import "./statsMaster.css";
+import {localisationSite,localisationName,SITES} from "./locationModel.js";
 
 const empty={pannes:[],pm:[],operating:[],machines:[],units:[],scope:{}};
 const number=v=>new Intl.NumberFormat(localStorage.getItem("engineering_language")==="en"?"en-GB":"fr-FR",{maximumFractionDigits:1}).format(Number(v)||0);
@@ -18,7 +19,7 @@ const norm=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLo
 const isClosed=p=>["close","closed","cloture","cloturee","termine","terminee"].includes(norm(p.statut));
 const isPMDone=p=>["realisee","realise","non conforme"].includes(norm(p.statut));
 const isPMCancelled=p=>["annulee","annule"].includes(norm(p.statut));
-const unitSite=u=>/^(U6|U06|SG02)$/i.test(String(u||""))?"Site 02":"Site 01";
+const unitSite=localisationSite;
 const unique=xs=>[...new Set(xs.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),"fr"));
 function safeLocal(key,def){try{return localStorage.getItem(key)||def;}catch{return def;}}
 function persist(key,value){try{localStorage.setItem(key,value);}catch{}}
@@ -117,7 +118,7 @@ function statsReducer(data,site,unit,machine,period,month,now,lang="fr"){
  const assets=data.machines.filter(r=>(!site||unitSite(r.unite)===site)&&(!unit||r.unite===unit)&&(!machine||r.tag===machine));
  const tags=new Set(assets.map(r=>r.tag));
  // Inclure les interventions de services généraux sans machine de production,
- // mais appliquer toujours le périmètre d'unités fourni par le serveur.
+ // mais appliquer toujours le périmètre d'localisations fourni par le serveur.
  const units=new Set(data.units.filter(u=>(!site||unitSite(u)===site)&&(!unit||u===unit)));
  const low=new Date(now);low.setHours(0,0,0,0);
  if(period==="30")low.setDate(low.getDate()-29);
@@ -153,7 +154,7 @@ function statsReducer(data,site,unit,machine,period,month,now,lang="fr"){
  for(const p of ps){const name=String(p.technicien||"").trim();if(!name)continue;const prev=techMap.get(name)||{name,count:0,closed:0,minutes:0};
    prev.count++;if(isClosed(p)){prev.closed++;prev.minutes+=n(p.downtime);}techMap.set(name,prev);}
  const technicians=[...techMap.values()].sort((a,b)=>b.count-a.count).slice(0,8);
- const byUnit=unique([...ps.map(p=>p.unite),...pm.map(p=>p.unite)]).map(u=>({name:u,value:ps.filter(p=>p.unite===u).length,pm:pm.filter(p=>p.unite===u).length}));
+ const byUnit=unique([...ps.map(p=>p.unite),...pm.map(p=>p.unite)]).map(u=>({name:localisationName(u,{withSite:true}),value:ps.filter(p=>p.unite===u).length,pm:pm.filter(p=>p.unite===u).length}));
  const endMonth=new Date(now.getFullYear(),now.getMonth(),1);
  const buckets=monthsFor(endMonth,12,lang);
  const series={
@@ -207,22 +208,22 @@ export default function StatsMaster({theme="dark",onThemeChange=()=>{},language=
  useEffect(()=>{load()},[]);
  useEffect(()=>persist("engineering_stats_palette",palette),[palette]);
  useEffect(()=>persist("engineering_stats_compact",String(compact)),[compact]);
- const siteOptions=["Site 01","Site 02"];
+ const siteOptions=SITES;
  const units=useMemo(()=>unique(data.units.filter(u=>!site||unitSite(u)===site)),[data.units,site]);
  const machines=useMemo(()=>data.machines.filter(m=>(!site||unitSite(m.unite)===site)&&(!unit||m.unite===unit)).sort((a,b)=>String(a.tag).localeCompare(String(b.tag),"fr")),[data.machines,site,unit]);
  const stats=useMemo(()=>statsReducer(data,site,unit,machine,period,month,today,language),[data,site,unit,machine,period,month,today,language]);
  const reset=()=>{setPeriod("365");setSite("");setUnit("");setMachine("");setMonth("")};
  const mOptions=useMemo(()=>unique([...data.pannes.map(p=>iso(p.date_panne).slice(0,7)),...data.pm.map(p=>iso(p.date_prevue).slice(0,7))].filter(x=>/^\d{4}-\d{2}$/.test(x))).reverse(),[data]);
  const exportReport=()=>{
-  const rows=stats.machineStats.sort((a,b)=>b.pannes-a.pannes).map(x=>[x.tag,x.designation||"",x.unite,x.pannes,number(x.downtime/60),x.mtbf===null?"":number(x.mtbf),x.mttr===null?"":number(x.mttr),x.dispon===null?"":number(x.dispon)]);
-  downloadCSV("Engineering_Statistiques_"+iso(new Date().toISOString())+".csv",["Machine","Désignation","Unité","Pannes","Arrêt (h)","MTBF estimé (h)","MTTR (min)","Disponibilité (%)"],rows);
+  const rows=stats.machineStats.sort((a,b)=>b.pannes-a.pannes).map(x=>[x.tag,x.designation||"",localisationName(x.unite,{withSite:true}),x.pannes,number(x.downtime/60),x.mtbf===null?"":number(x.mtbf),x.mttr===null?"":number(x.mttr),x.dispon===null?"":number(x.dispon)]);
+  downloadCSV("Engineering_Statistiques_"+iso(new Date().toISOString())+".csv",["Machine","Désignation","Localisation","Pannes","Arrêt (h)","MTBF estimé (h)","MTTR (min)","Disponibilité (%)"],rows);
  };
  const annual=stats.buckets.map(x=>x.label);
  const primary=getComputedStyleSafe(palette).primary,secondary=getComputedStyleSafe(palette).secondary;
  const views=[["overview","Vue générale",BarChart3],["reliability","Fiabilité & MTBF",Gauge],["pm","Maintenance préventive",CalendarClock],["team","Performance techniciens",Users]];
  const hasData=stats.ps.length||stats.pm.length||stats.ops.length;
  const periodText=period==="all"?"Toutes périodes":period==="365"?"12 derniers mois":period+" derniers jours";
- const scopeText=[site||"Tous les sites",unit||"Toutes les unités",machine||"Toutes les machines"].join(" / ");
+ const scopeText=[site||"Tous les sites",unit?localisationName(unit,{withSite:true}):"Toutes les localisations",machine||"Toutes les machines"].join(" / ");
  const scheduled=stats.pm.length-stats.done.length-stats.cancelled.length;
  return <div className={"statsMaster "+(compact?"sm-compact":"")} data-stats-palette={palette}>
   <section className="sm-hero">
@@ -243,7 +244,7 @@ export default function StatsMaster({theme="dark",onThemeChange=()=>{},language=
      <button type="button" key={key} className={period===key?"selected":""} aria-pressed={period===key} onClick={()=>setPeriod(key)}>{label}</button>)}</div></div>
    <label className="sm-field"><span>Site</span><select value={site} onChange={e=>{setSite(e.target.value);setUnit("");setMachine("")}}>
     <option value="">Tous les sites</option>{siteOptions.filter(x=>data.units.some(u=>unitSite(u)===x)).map(x=><option key={x}>{x}</option>)}</select></label>
-   <label className="sm-field"><span>Unité</span><select value={unit} onChange={e=>{setUnit(e.target.value);setMachine("")}}><option value="">Toutes les unités</option>{units.map(u=><option key={u}>{u}</option>)}</select></label>
+   <label className="sm-field"><span>Localisation</span><select value={unit} onChange={e=>{setUnit(e.target.value);setMachine("")}}><option value="">Toutes les localisations</option>{units.map(u=><option key={u} value={u}>{localisationName(u,{withSite:true})}</option>)}</select></label>
    <label className="sm-field"><span>Machine</span><select value={machine} onChange={e=>setMachine(e.target.value)}><option value="">Toutes les machines</option>{machines.map(m=><option value={m.tag} key={m.tag}>{m.tag} · {m.designation||""}</option>)}</select></label>
    <label className="sm-field sm-month"><span>Mois précis</span><select value={month} onChange={e=>setMonth(e.target.value)}><option value="">Tous les mois</option>{mOptions.map(x=><option value={x} key={x}>{x}</option>)}</select></label>
    <div className="sm-filterActions"><button className="sm-clear" title="Réinitialiser les filtres" onClick={reset}><RotateCcw size={15}/> Effacer</button>
@@ -320,11 +321,11 @@ export default function StatsMaster({theme="dark",onThemeChange=()=>{},language=
     <Panel eyebrow="TAUX DE RÉALISATION" title="Respect du programme" icon={Gauge}>
       <GaugeRing value={stats.pmRate} label="PM RÉALISÉES"/>
       <div className="sm-trackRow"><span>Annulées</span><strong>{stats.cancelled.length}</strong></div><div className="sm-track"><i style={{width:(stats.pm.length?stats.cancelled.length/stats.pm.length*100:0)+"%"}}/></div></Panel>
-    <Panel eyebrow="RÉPARTITION PAR UNITÉ" title="Charge préventive" subtitle="Nombre de PM par unité" icon={Layers}>
+    <Panel eyebrow="RÉPARTITION PAR LOCALISATION" title="Charge préventive" subtitle="Nombre de PM par localisation" icon={Layers}>
       <Ranking items={[...stats.byUnit].sort((a,b)=>b.pm-a.pm).filter(x=>x.pm).slice(0,8).map(x=>({name:x.name,value:x.pm}))} suffix="PM"/></Panel>
     <Panel eyebrow="À SURVEILLER" title="Prochaines échéances en retard" icon={CalendarClock} className="sm-wide">
       <div className="sm-overdueList">{stats.overdue.length?[...stats.overdue].sort((a,b)=>iso(a.date_prevue).localeCompare(iso(b.date_prevue))).slice(0,12).map(p=><div key={p.id}>
-       <span className="sm-overdueTag">RETARD</span><strong>{p.machine_tag||"Machine non renseignée"}</strong><span>{p.unite||"—"}</span><time>{dateFR(p.date_prevue,language)}</time></div>):
+       <span className="sm-overdueTag">RETARD</span><strong>{p.machine_tag||"Machine non renseignée"}</strong><span>{localisationName(p.unite,{withSite:true})}</span><time>{dateFR(p.date_prevue,language)}</time></div>):
        <div className="sm-noData"><CheckCircle2 size={20}/>Aucune échéance PM en retard dans ce périmètre.</div>}</div></Panel>
    </div>
   </>}
