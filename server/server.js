@@ -9,6 +9,7 @@ import { registerExcelRoutes } from "./bulkExcel.js";
 import { readAllSupabase } from "./paginatedSupabase.js";
 import { localisationSite, SITES } from "../client/src/locationModel.js";
 import {isAdmin,isLead,permittedModule,sameDepartment,machineInDepartment,panneInDepartment,pmInDepartment,employeeOwnsPanne,panneEditable,nameAccess} from "../client/src/accessPolicy.js";
+import {pmVisibility} from "../client/src/pmVisibility.js";
 import { createSettingsHandlers } from "./desktopSettings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -714,8 +715,16 @@ async function remoteModuleRows(module,user){
       Boolean(panneEditable(user,row)&&(row.cree_par_effectif_id||legacy.has(nameAccess(row.technicien))))}));
   }
   if(module==="pm"){
-    const rows=await supabaseReadAll("pm_programmees","?select=*&order=date_prevue.desc,id.desc");
-    return rows.filter(row=>units.has(row.unite)&&pmInDepartment(user,row));
+    const [rows,machines]=await Promise.all([
+      supabaseReadAll("pm_programmees","?select=*&order=date_prevue.desc,id.desc"),
+      visibleMachineRows(user)
+    ]);
+    const machineIndex=new Map(machines.map(machine=>[machine.tag,machine]));
+    return rows.flatMap(row=>{
+      const access=pmVisibility(user,row,units,machineIndex.get(row.machine_tag));
+      return access.visible?[{...row,consultation_seule:access.readOnly,
+        attribution_requise:access.reason==="legacy-unassigned"}]:[];
+    });
   }
   if(module==="operating"){
     const [entries,machines]=await Promise.all([
