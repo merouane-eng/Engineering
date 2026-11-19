@@ -692,6 +692,7 @@ function PreventiveMaintenance({ user }) {
   };
 
   const openRealization = row => {
+    if(row.consultation_seule){setError("Service non attribué : contactez un administrateur.");return;}
     setRealization(row);
     setRealizationDraft({ date_debut: "", date_fin: "", commentaire: "", technicien: context.technician });
   };
@@ -712,7 +713,7 @@ function PreventiveMaintenance({ user }) {
 
   return <div className="breakdownListMaster operationsMaster">
     <PageTitle title="Maintenance préventive" subtitle={filtered.length + " / " + rows.length + " PM affichée(s)"} />
-    {!isAdmin(user)&&<div className="pm-electricScope"><Wrench size={16}/> Département : <strong>{user.service||"Non affecté"}</strong> — seules les PM de votre département et de vos localisations sont visibles.</div>}
+    {!isAdmin(user)&&<div className="pm-electricScope"><Wrench size={16}/> Département : <strong>{user.service||"Non affecté"}</strong> — les PM attribuées sont limitées à votre département. Les anciennes PM non attribuées peuvent être consultées par les responsables, sans possibilité de réalisation avant affectation.</div>}
     {error && <div className="formError">{error}</div>}
     <section className="bl-kpis">
       <article className="bl-kpi"><div className="bl-kpiTop"><span>TOTAL PM</span><span className="bl-kpiIcon bl-blue"><CalendarClock /></span></div><strong>{filtered.length}</strong><small>Maintenances filtrées</small></article>
@@ -736,9 +737,9 @@ function PreventiveMaintenance({ user }) {
           <td>{row.date_prevue}</td><td>{localisationName(row.unite,{withSite:true})}</td>
           <td>{row.machine_tag} — {row.machine_designation || ""}</td><td>{row.frequence}</td>
           <td>{row.responsable || "—"}</td>
-          <td>{user.role==="admin" ? <div className="pm-serviceAssign"><select aria-label={"Service de la PM "+row.id} value={serviceDrafts[row.id] ?? row.service_intervenant ?? ""} onChange={e=>setServiceDrafts(old=>({...old,[row.id]:e.target.value}))}><option value="">Non attribuée</option>{[...new Set([...servicesPM,row.service_intervenant].filter(Boolean))].map(s=><option key={s} value={s}>{s}</option>)}</select><button type="button" onClick={()=>assignService(row)} title="Enregistrer le service intervenant">Valider</button></div> : (row.service_intervenant||"—")}</td><td>{row.statut}</td>
-          <td className="actions">{row.statut === "Planifiée" &&
-            <button className="primary" onClick={() => openRealization(row)}>Réaliser</button>}</td>
+          <td>{user.role==="admin" ? <div className="pm-serviceAssign"><select aria-label={"Service de la PM "+row.id} value={serviceDrafts[row.id] ?? row.service_intervenant ?? ""} onChange={e=>setServiceDrafts(old=>({...old,[row.id]:e.target.value}))}><option value="">Non attribuée</option>{[...new Set([...servicesPM,row.service_intervenant].filter(Boolean))].map(s=><option key={s} value={s}>{s}</option>)}</select><button type="button" onClick={()=>assignService(row)} title="Enregistrer le service intervenant">Valider</button></div> : (row.attribution_requise?<span title="Affectation par un administrateur requise">Non attribuée · consultation seule</span>:(row.service_intervenant||"—"))}</td><td>{row.statut}</td>
+          <td className="actions">{row.statut === "Planifiée" && !row.consultation_seule &&
+            <button className="primary" onClick={() => openRealization(row)}>Réaliser</button>}{row.attribution_requise&&<small title="Un administrateur doit renseigner le service intervenant">Affectation requise</small>}</td>
         </tr>)}</tbody>
       </table>
       {!filtered.length && <div className="empty">Aucune maintenance préventive</div>}
