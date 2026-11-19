@@ -568,4 +568,9 @@ export const EXTRA_EN = {
   "La localisation doit correspondre au site choisi.": "The location must match the selected site.",
   "Machine et localisation incohérentes": "Machine and location do not match",
   "Site incohérent avec la localisation.": "Site does not match the location.",
+  "Non attribuée · consultation seule": "Unassigned · read only",
+  "Affectation requise": "Assignment required",
+  "Les anciennes PM non attribuées peuvent être consultées par les responsables, sans possibilité de réalisation avant affectation.": "Managers can view legacy unassigned PM, but cannot complete them until they are assigned.",
+  "Département :": "Department:",
+  "Service non attribué : contactez un administrateur.": "Unassigned department: contact an administrator.",
 };
