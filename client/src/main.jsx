@@ -637,6 +637,11 @@ function PreventiveMaintenance({ user }) {
   const [filterStatus, setFilterStatus] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
   const [serviceDrafts, setServiceDrafts] = useState({});
+  const [legacyUnit,setLegacyUnit]=useState("");
+  const [legacyDepartment,setLegacyDepartment]=useState("");
+  const [legacyPreview,setLegacyPreview]=useState(null);
+  const [legacyBusy,setLegacyBusy]=useState(false);
+  const [legacyNotice,setLegacyNotice]=useState("");
   const [form, setForm] = useState(null);
   const [realization, setRealization] = useState(null);
   const [error, setError] = useState("");
@@ -667,6 +672,31 @@ function PreventiveMaintenance({ user }) {
       await api("/api/pm/"+row.id+"/service",{method:"PUT",body:JSON.stringify({service_intervenant:serviceDrafts[row.id] ?? row.service_intervenant ?? ""})});
       await load();
     } catch(err){setError(err.message);}
+  };
+
+  const previewLegacy=async()=>{
+    setLegacyNotice("");setLegacyPreview(null);
+    if(!legacyUnit){setLegacyNotice("Choisir une localisation.");return;}
+    setLegacyBusy(true);
+    try{
+      setLegacyPreview(await api("/api/pm/legacy/unassigned?unite="+encodeURIComponent(legacyUnit)));
+    }catch(e){setLegacyNotice(e.message);}finally{setLegacyBusy(false);}
+  };
+  const assignLegacy=async()=>{
+    if(!legacyPreview?.unassigned||!legacyDepartment)return;
+    const confirmation="Attribuer "+legacyPreview.unassigned+" PM historiques de "+localisationName(legacyUnit,{withSite:true})+
+      " au département « "+legacyDepartment+" » ? Les PM déjà attribuées seront conservées.";
+    if(!window.confirm(confirmation))return;
+    setLegacyBusy(true);setLegacyNotice("");
+    try{
+      const result=await api("/api/pm/legacy/assign",{method:"POST",body:JSON.stringify({
+        unite:legacyUnit,service_intervenant:legacyDepartment,expected_count:legacyPreview.unassigned
+      })});
+      setLegacyNotice(result.attributed+" PM attribuées au département "+legacyDepartment+".");
+      setLegacyPreview(null);
+      await load();
+    }catch(e){setLegacyNotice(e.message);setLegacyPreview(null);}
+    finally{setLegacyBusy(false);}
   };
 
   const openForm = () => setForm({
@@ -713,6 +743,35 @@ function PreventiveMaintenance({ user }) {
   return <div className="breakdownListMaster operationsMaster">
     <PageTitle title="Maintenance préventive" subtitle={filtered.length + " / " + rows.length + " PM affichée(s)"} />
     {!isAdmin(user)&&<div className="pm-electricScope"><Wrench size={16}/> Département : <strong>{user.service||"Non affecté"}</strong> — seules les PM de votre département et de vos localisations sont visibles.</div>}
+    {!isAdmin(user)&&rows.length===0&&!error&&<p className="pm-legacy-empty" role="status">
+      Aucune PM attribuée à votre département dans vos localisations. Les anciennes PM sans service ne sont pas automatiquement accessibles : un administrateur doit vérifier et confirmer leur affectation.
+    </p>}
+    {isAdmin(user)&&<details className="pm-legacy-tools">
+      <summary><Wrench size={16}/> Attribution des PM historiques sans département</summary>
+      <p>Les anciennes PM sans service intervenant sont invisibles aux utilisateurs non administrateurs. Choisissez la localisation et le département réel, puis consultez l'aperçu avant de confirmer. Les dates et résultats des PM restent inchangés.</p>
+      <div className="pm-legacy-fields">
+        <label>Localisation
+          <select value={legacyUnit} onChange={e=>{setLegacyUnit(e.target.value);setLegacyPreview(null);setLegacyNotice("");}}>
+            <option value="">Choisir une localisation</option>
+            {units.map(u=><option key={u} value={u}>{localisationName(u,{withSite:true})}</option>)}
+          </select>
+        </label>
+        <label>Département
+          <select value={legacyDepartment} onChange={e=>{setLegacyDepartment(e.target.value);setLegacyNotice("");}}>
+            <option value="">Choisir un département</option>
+            {servicesPM.map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+        <button type="button" disabled={legacyBusy||!legacyUnit} onClick={previewLegacy}>Prévisualiser les PM non attribuées</button>
+      </div>
+      {legacyPreview&&<div className="pm-legacy-preview" role="status">
+        <strong>{legacyPreview.unassigned} PM sans département</strong> sur {legacyPreview.total} PM de {localisationName(legacyPreview.unite,{withSite:true})}.
+        <span>{Object.entries(legacyPreview.by_status||{}).map(([status,n])=>status+" : "+n).join(" · ")}</span>
+        <button type="button" className="primary" disabled={legacyBusy||!legacyDepartment||legacyPreview.unassigned===0}
+          onClick={assignLegacy}>Confirmer l'attribution au département</button>
+      </div>}
+      {legacyNotice&&<p role="status" className="pm-legacy-notice">{legacyNotice}</p>}
+    </details>
     {error && <div className="formError">{error}</div>}
     <section className="bl-kpis">
       <article className="bl-kpi"><div className="bl-kpiTop"><span>TOTAL PM</span><span className="bl-kpiIcon bl-blue"><CalendarClock /></span></div><strong>{filtered.length}</strong><small>Maintenances filtrées</small></article>
