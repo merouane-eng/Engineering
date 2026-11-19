@@ -19,7 +19,7 @@ const shared=Array.from({length:47},(_,i)=>({
 }));
 const history=Array.from({length:212},(_,i)=>({
  id:i+1,unite:"U5",machine_tag:i<209?shared[i%shared.length].tag:"U5-MANQUANTE-"+i,
- service_intervenant:null,statut:i===211?"Planifiée":"Réalisée",date_prevue:"2025-07-01"
+ service_intervenant:null,statut:i===0?"Planifiée":"Réalisée",date_prevue:"2025-07-01"
 }));
 const requests=[],writes=[];
 const supabaseReadAll=async table=>{
@@ -47,7 +47,8 @@ test("API /modules/pm U5 : 209 PM visibles pour un technicien, sans aucune écri
  assert.equal(rows.length,209);
  assert.equal(rows.filter(x=>x.consultation_seule).length,209);
  assert.equal(rows.filter(x=>x.attribution_requise).length,209);
- assert.equal(rows.filter(x=>x.statut==="Réalisée").length,209);
+ assert.equal(rows.filter(x=>x.statut==="Réalisée").length,208);
+ assert.equal(rows.filter(x=>x.statut==="Planifiée").length,1);
  assert.deepEqual(writes,[]);
 });
 test("Technicien et shift leader U5 voient le même historique non attribué, lecture seule",async()=>{
@@ -76,7 +77,7 @@ test("API de réalisation interdit une PM sans service, même avec une requête 
  const handler=routes.post["/api/pm/:id/realiser"];
  assert.equal(typeof handler,"function");
  const res={statusCode:200,payload:null,status(code){this.statusCode=code;return this},json(body){this.payload=body;return this}};
- await handler({user:tech,params:{id:"212"},body:{
+ await handler({user:tech,params:{id:"1"},body:{
   date_debut:"2026-11-19T08:00",date_fin:"2026-11-19T09:00",technicien:"Test"
  }},res);
  assert.equal(res.statusCode,403);
