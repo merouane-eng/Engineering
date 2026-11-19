@@ -858,3 +858,18 @@ button{touch-action:manipulation}
  .adminExcelNumbers span{font-size:10px}
 }
 @media(max-width:360px){.adminExcelButton{font-size:10px}}
+
+/* Attribution sécurisée des anciennes PM sans département */
+.pm-legacy-tools{margin:14px 0 18px;padding:15px 18px;border:1px solid var(--border,#374151);border-radius:14px;background:var(--panel,rgba(148,163,184,.06));}
+.pm-legacy-tools summary{display:flex;align-items:center;gap:9px;font-weight:750;cursor:pointer;list-style:none;}
+.pm-legacy-tools summary::-webkit-details-marker{display:none;}
+.pm-legacy-tools p{font-size:.9rem;color:var(--text-muted,#94a3b8);line-height:1.55;margin:10px 0;}
+.pm-legacy-fields{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:12px 0;}
+.pm-legacy-fields label{flex:1 1 200px;display:grid;gap:6px;font-size:.85rem;}
+.pm-legacy-fields select{width:100%;min-height:43px;background:var(--input-bg,var(--card-bg,#111827));color:inherit;border:1px solid var(--border,#475569);border-radius:9px;padding:8px;}
+.pm-legacy-fields button,.pm-legacy-preview button{min-height:43px;border-radius:9px;padding:8px 14px;cursor:pointer;}
+.pm-legacy-fields button:disabled,.pm-legacy-preview button:disabled{opacity:.5;cursor:not-allowed;}
+.pm-legacy-preview{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;padding:12px;border:1px solid var(--border,#475569);border-radius:10px;}
+.pm-legacy-preview span{flex-basis:100%;font-size:.85rem;}
+.pm-legacy-notice,.pm-legacy-empty{padding:10px 14px;border:1px solid var(--border,#475569);border-radius:10px;font-size:.9rem;line-height:1.5;}
+@media(max-width:600px){.pm-legacy-tools{padding:13px}.pm-legacy-fields{display:grid;grid-template-columns:1fr}.pm-legacy-fields label,.pm-legacy-fields button,.pm-legacy-preview button{width:100%}}
