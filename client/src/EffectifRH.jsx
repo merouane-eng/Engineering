@@ -190,7 +190,7 @@ function EffectifRH({ user, api }) {
         <label>Site<select value={explicitSite} disabled={selectedSites.length>0} onChange={e=>patch("site",e.target.value)}><option value="">Non renseigné</option>{SITES.map(s=><option key={s} value={s}>{s}</option>)}<option value="Site 01; Site 02">Les deux sites</option></select><small>Automatique si des localisations sont affectées.</small></label>
       </div>
       <fieldset className="unitPicker"><legend>Affectations aux localisations</legend><label><input type="checkbox" checked={Boolean(form.toutes_unites)} onChange={e=>patch("toutes_unites",e.target.checked)}/> Toutes les localisations</label>
-        {!form.toutes_unites&&<div className="unitGrid">{allUnitOptions.map(u=><label key={u}><input type="checkbox" checked={form.units.includes(u)} onChange={()=>toggleUnit(u)}/>{u==="SG01"?"Services généraux — Site 01":u==="SG02"?"Services généraux — Site 02":u}</label>)}</div>}
+        {!form.toutes_unites&&<div className="unitGrid">{allUnitOptions.map(u=><label key={u}><input type="checkbox" checked={form.units.includes(u)} onChange={()=>toggleUnit(u)}/>{localisationName(u,{withSite:true})}</label>)}</div>}
       </fieldset>
       <div className="formGrid"><label><input type="checkbox" checked={Boolean(form.actif)} onChange={e=>patch("actif",e.target.checked)}/> Actif</label><label><input type="checkbox" checked={Boolean(form.is_admin)} onChange={e=>patch("is_admin",e.target.checked)}/> Administrateur</label></div>
       {error&&<div className="formError" role="alert">{error}</div>}
