@@ -1,10 +1,11 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
 import {SlidersHorizontal,Plus,Pencil,Trash2,RefreshCcw,Save,X,Search,ShieldCheck,Database,Download,Upload,AlertTriangle,CheckCircle2,Layers,ChevronRight} from "lucide-react";
 import "./desktopSettings.css";
+import {SITES,localisationLabel,localisationSite} from "./locationModel.js";
 
 const TABS=[
  ["service","Services"],["fonction","Fonctions"],["zone","Zones"],
- ["unite","Unités"],["groupe","Groupes"],["frequence_pm","Fréquences PM"],
+ ["unite","Localisations"],["frequence_pm","Fréquences PM"],
  ["statut_pm","Statuts PM"],["statut_panne","Statuts panne"],
  ["area_SG01","Areas SG — Site 01"],["equipement_SG01","Équipements SG — Site 01"],
  ["area_SG02","Areas SG — Site 02"],["equipement_SG02","Équipements SG — Site 02"]
@@ -40,12 +41,12 @@ export default function DesktopSettings(){
   finally{setBusy(false);}
  };
  useEffect(()=>{load();},[]);
- const current=useMemo(()=>rows.filter(r=>r.type_liste===tab&&[r.valeur,r.parent].join(" ").toLocaleLowerCase("fr").includes(query.toLocaleLowerCase("fr"))),[rows,tab,query]);
- const parentOpts=rows.filter(r=>r.type_liste==="groupe").map(r=>r.valeur);
+ const current=useMemo(()=>rows.filter(r=>r.type_liste===tab&&[r.valeur,localisationLabel(r.valeur),r.site].join(" ").toLocaleLowerCase("fr").includes(query.toLocaleLowerCase("fr"))),[rows,tab,query]);
+ const parentOpts=[];
  const openForm=row=>{
   setError("");setNotice("");
-  setForm(row?{id:row.id,type_liste:row.type_liste,valeur:row.valeur,parent:row.parent||""}:
-   {type_liste:tab,valeur:"",parent:""});
+  setForm(row?{id:row.id,type_liste:row.type_liste,valeur:row.type_liste==="unite"?localisationLabel(row.valeur):row.valeur,site:row.site||localisationSite(row.valeur),parent:null}:
+   {type_liste:tab,valeur:"",site:"Site 01",parent:null});
  };
  const submit=async e=>{
   e.preventDefault();if(!form?.valeur?.trim())return;
@@ -125,10 +126,10 @@ export default function DesktopSettings(){
     <button type="button" className="ds-primary" onClick={()=>openForm()}><Plus size={16}/> Ajouter</button>
    </div>
    <div className="ds-tableWrap"><table>
-    <thead><tr><th>Valeur</th><th>Parent (groupe)</th><th>Utilisation</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Valeur</th><th>Site</th><th>Utilisation</th><th>Actions</th></tr></thead>
     <tbody>{current.length?current.map(r=><tr key={r.id}>
-     <td><strong>{r.valeur}</strong></td>
-     <td>{tab==="unite"?(r.parent||"—"):"—"}</td>
+     <td><strong>{tab==="unite"?localisationLabel(r.valeur):r.valeur}</strong></td>
+     <td>{tab==="unite"?(r.site||localisationSite(r.valeur)):"—"}</td>
      <td><span className={r.usage?"ds-usage used":"ds-usage"}>{r.usage||0} usage{r.usage===1?"":"s"}</span></td>
      <td><div className="ds-rowactions">
       <button type="button" aria-label={"Modifier "+r.valeur} title="Modifier" onClick={()=>openForm(r)}><Pencil size={15}/></button>
@@ -164,9 +165,9 @@ export default function DesktopSettings(){
     <header><div><span className="ds-eyebrow">{form.id?"MODIFICATION":"NOUVELLE RÉFÉRENCE"}</span>
       <h3>{label}</h3></div><button type="button" onClick={()=>setForm(null)} aria-label="Fermer"><X size={18}/></button></header>
     <label>Valeur <span>*</span><input required maxLength={120} autoFocus value={form.valeur} onChange={e=>setForm(old=>({...old,valeur:e.target.value}))} placeholder="Nom de la référence"/></label>
-    {form.type_liste==="unite"&&<label>Parent (groupe)<select value={form.parent||""} onChange={e=>setForm(old=>({...old,parent:e.target.value}))}>
-      <option value="">Aucun groupe</option>{parentOpts.map(g=><option key={g} value={g}>{g}</option>)}</select></label>}
-    <p>Les références utilisées ne peuvent pas être renommées vers un autre libellé ni supprimées sans réaffecter les données métier.</p>
+    {form.type_liste==="unite"&&<label>Site *<select required value={form.site||"Site 01"} onChange={e=>setForm(old=>({...old,site:e.target.value}))}>
+      {SITES.map(s=><option key={s} value={s}>{s}</option>)}</select></label>}
+    <p>Une localisation est liée à un site. Les références utilisées ne peuvent pas être renommées ou supprimées sans réaffectation des données métier.</p>
     <div className="ds-modalActions"><button type="button" onClick={()=>setForm(null)}>Annuler</button>
       <button type="submit" className="ds-primary" disabled={busy}><Save size={16}/> Enregistrer</button></div>
    </form></div>}
