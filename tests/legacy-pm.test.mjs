@@ -57,7 +57,7 @@ test("Aperçu U4 : 265 réalisées sans département, une PM Électricité prés
  const fx=setup();
  const r=await fx.call("GET","/api/pm/legacy/unassigned",{query:{unite:"U4"}});
  assert.equal(r.statusCode,200);
- assert.deepEqual({...r.data},{unite:"U4",total:266,unassigned:265,assigned:1,by_status:{"Réalisée":265}});
+ assert.deepEqual({...r.data},{unite:"U4",machine_tag:"",total:266,unassigned:265,assigned:1,by_status:{"Réalisée":265},by_machine:{"(sans machine)":265}});
  assert.equal(fx.calls.length,0,"Preview never mutates records");
 });
 test("Attribution groupée admin avec confirmation du compte : 3 lots, zéro écrasement",async()=>{
