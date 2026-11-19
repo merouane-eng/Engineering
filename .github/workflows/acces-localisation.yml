@@ -1,0 +1,36 @@
+name: Accès par localisation et département
+on:
+  push:
+    branches:
+      - preview/acces-hierarchiques-localisation-departement
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  permissions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Installer et compiler
+        run: |
+          npm ci
+          npm run build
+      - name: Tester permissions et non régression de la base
+        run: node --test tests/access-policy.test.mjs tests/access-routes.test.mjs tests/electrician_access.test.mjs tests/localisations.test.mjs tests/pagination.test.mjs tests/settings-admin.test.mjs tests/excel.test.mjs
+      - name: Installer Chromium
+        run: |
+          npm install --no-save @playwright/test
+          npx playwright install --with-deps chromium
+      - name: Tester l'interface PC/mobile, rôles, FR/EN et localisation
+        run: |
+          npx vite preview --config client/vite.config.js --host 127.0.0.1 --port 4173 >/tmp/engineering-preview.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi
+            sleep 1
+          done
+          npx playwright test tests/role-access.spec.mjs tests/localisations.spec.mjs tests/responsive.spec.mjs tests/i18n.spec.mjs --workers=1 --reporter=line
