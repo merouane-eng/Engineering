@@ -1,0 +1,36 @@
+name: Localisations multi-sites sans Groupe
+on:
+  push:
+    branches:
+      - preview/localisation-sites-sans-groupe
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Compiler Engineering web/mobile
+        run: |
+          npm ci
+          npm run build
+      - name: Vérifier la migration Localisation et la sécurité
+        run: node --test tests/localisations.test.mjs tests/pagination.test.mjs tests/electrician_access.test.mjs tests/settings-admin.test.mjs tests/excel.test.mjs
+      - name: Installer Chromium
+        run: |
+          npm install --no-save @playwright/test
+          npx playwright install --with-deps chromium
+      - name: Tester site, localisation, PM, RH, statistiques en mobile et PC
+        run: |
+          npx vite preview --config client/vite.config.js --host 127.0.0.1 --port 4173 >/tmp/engineering-preview.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi
+            sleep 1
+          done
+          npx playwright test tests/localisations.spec.mjs tests/responsive.spec.mjs tests/i18n.spec.mjs --workers=1 --reporter=line
