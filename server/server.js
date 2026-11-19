@@ -835,21 +835,19 @@ app.get("/api/saisie/context", requireAuth, async (req, res) => {
   try {
     const [units, allMachines, employees, references] = await Promise.all([
       allowedUnitsForUser(req.user),
-      supabaseRequest("machines", { query: "?select=id,tag,designation,unite,zone&actif=eq.1&order=unite.asc,tag.asc" }),
+      visibleMachineRows(req.user),
       supabaseRequest("effectif", { query: "?select=nom,prenom,service,actif&actif=eq.true&order=nom.asc,prenom.asc" }),
       desktopSettings.list()
     ]);
-    const machines = allMachines.filter(row =>
-      (req.user.role === "admin" || req.user.toutes_unites || units.includes(row.unite))
-    );
+    const machines = allMachines.filter(row => Number(row.actif)===1 && units.includes(row.unite));
     const technician = [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim();
     const refVals=type=>references.filter(r=>r.actif&&r.type_liste===type).map(r=>r.valeur);
-    const services = [...new Set([...refVals("service"),...employees.map(row => row.service)].filter(Boolean))].sort();
+    const services = isAdmin(req.user)?[...new Set([...refVals("service"),...employees.map(row => row.service)].filter(Boolean))].sort():[req.user.service].filter(Boolean);
     const zones = [...new Set([...refVals("zone"),...machines.map(row => String(row.zone || "").trim())].filter(Boolean))].sort();
     const technicians = req.user.role === "admin"
       ? employees.map(row => ({ name: [row.nom, row.prenom].filter(Boolean).join(" ").trim(), service: row.service || "" }))
       : [{ name: technician, service: req.user.service || "" }];
-    res.json({ units, machines, services: isElectrician(req.user) ? [req.user.service] : services, zones, technicians, technician, statuses: refVals("statut_panne"), service: req.user.service || "" });
+    res.json({ units, machines, services, zones, technicians, technician, statuses: refVals("statut_panne"), service: req.user.service || "" });
   } catch (error) {
     res.status(502).json({ error: `Chargement du contexte Supabase impossible: ${error.message}` });
   }
@@ -861,12 +859,12 @@ app.get("/api/pm/context", requireAuth, async (req, res) => {
   try {
     const [units, allMachines, employees, programmes, references] = await Promise.all([
       userUnits(req.user),
-      supabaseRequest("machines", { query: "?select=id,tag,designation,unite&actif=eq.1&order=unite.asc,tag.asc" }),
+      visibleMachineRows(req.user),
       supabaseRequest("effectif", { query: "?select=id,nom,prenom,service,actif&actif=eq.true&order=nom.asc,prenom.asc" }),
-      supabaseRequest("pm_programmees", { query: "?select=frequence" }),
+      supabaseReadAll("pm_programmees","?select=id,frequence&order=id.asc"),
       desktopSettings.list()
     ]);
-    const machines = allMachines.filter(row => req.user.role === "admin" || req.user.toutes_unites || units.includes(row.unite));
+    const machines = allMachines.filter(row => Number(row.actif)===1 && units.includes(row.unite));
     const technician = [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim();
     res.json({
       units, machines, technician,
@@ -885,11 +883,11 @@ app.get("/api/operating/context", requireAuth, async (req, res) => {
   try {
     const units = await allowedUnitsForUser(req.user);
     const [allMachines, entries] = await Promise.all([
-      supabaseRequest("machines", { query: "?select=tag,designation,unite&actif=eq.1&order=unite.asc,tag.asc" }),
-      supabaseRequest("operating_time", { query: "?select=machine" })
+      visibleMachineRows(req.user),
+      supabaseReadAll("operating_time","?select=id,machine&order=id.asc")
     ]);
     const tracked = new Set(entries.map(row => row.machine));
-    const machines = allMachines.filter(row => units.includes(row.unite) && (tracked.has(row.tag) || req.user.role === "admin" || req.user.role === "superviseur"));
+    const machines = allMachines.filter(row => Number(row.actif)===1 && units.includes(row.unite) && (tracked.has(row.tag) || isLead(req.user)));
     res.json({ units, machines, operator: [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim() });
   } catch (error) { res.status(502).json({ error: `Chargement Operating Time impossible: ${error.message}` }); }
 });
@@ -900,8 +898,8 @@ app.post("/api/operating", requireAuth, async (req, res) => {
     if (!unit || !machine || !date) return res.status(400).json({ error: "Localisation, machine et date sont obligatoires" });
     const allowed = await allowedUnitsForUser(req.user);
     if (!allowed.includes(unit)) return res.status(403).json({ error: "Localisation non autorisée" });
-    const machineRows = await supabaseRequest("machines", { query: `?select=tag,unite,actif&tag=eq.${encodeURIComponent(machine)}&limit=1` });
-    if (!machineRows[0] || machineRows[0].unite !== unit || Number(machineRows[0].actif) !== 1) return res.status(400).json({ error: "Machine et localisation incohérentes" });
+    const machineRows = await supabaseRequest("machines", { query: `?select=tag,unite,actif,departement&tag=eq.${encodeURIComponent(machine)}&limit=1` });
+    if (!machineRows[0] || machineRows[0].unite !== unit || Number(machineRows[0].actif) !== 1 || !machineInDepartment(req.user,machineRows[0])) return res.status(403).json({ error: "Machine ou département non autorisé" });
     const hours = Number(req.body.heures_marche);
     if (!Number.isFinite(hours) || hours < 0 || hours > 24) return res.status(400).json({ error: "Heures de marche invalides" });
     const failures = await supabaseRequest("pannes", { query: `?select=downtime&machine=eq.${encodeURIComponent(machine)}&date_panne=eq.${encodeURIComponent(date)}` });
@@ -1056,50 +1054,34 @@ app.get("/api/stats/overview", requireAuth, requireModule("stats"), async (req,r
   }
 });
 
-app.get("/api/dashboard", requireAuth, requireModule("accueil"), async (req, res) => {
-  try {
-    const units = await allowedUnitsForUser(req.user);
-    const [machines, employees, pannes, pm] = await Promise.all([
-      supabaseRequest("machines", { query: "?select=tag,unite,actif" }),
-      supabaseRequest("effectif", { query: "?select=id,actif,service" }),
-      supabaseReadAll("pannes", "?select=id,wo,machine,probleme,unite,statut,date_panne,service,technicien&order=date_panne.desc,id.desc"),
-      supabaseReadAll("pm_programmees", "?select=id,machine_tag,unite,statut,date_prevue,frequence,responsable,service_intervenant&order=date_prevue.asc,id.asc")
+app.get("/api/dashboard",requireAuth,requireModule("accueil"),async(req,res)=>{
+  try{
+    const [units,machines,employees,pannes,pm]=await Promise.all([
+      allowedUnitsForUser(req.user),visibleMachineRows(req.user),remoteEffectifWithUnits(req.user),
+      remoteModuleRows("liste",req.user),remoteModuleRows("pm",req.user)
     ]);
-    const month = localTimestamp().slice(0, 7);
-    const visibleMachines = machines.filter(row => units.includes(row.unite) && Number(row.actif) === 1);
-    let visibleEmployees = employees;
-    if (req.user.role !== "admin" && !req.user.toutes_unites) {
-      const associations = await supabaseRequest("effectif_unites", { query: "?select=effectif_id,unite" });
-      const employeeIds = new Set(associations.filter(row => units.includes(row.unite)).map(row => row.effectif_id));
-      visibleEmployees = employees.filter(row => employeeIds.has(row.id));
-    }
-    const names=isElectrician(req.user)?await electricServiceNames():null;
-    if (names) visibleEmployees=employees.filter(row=>normService(row.service)==="electricite");
-    const panneRows=pannes.filter(row=>units.includes(row.unite)&&(!names||electricPanne(row,names)));
-    const pmRows=pm.filter(row=>units.includes(row.unite)&&(!names||electricPM(row,names)));
-    const realized = ["Réalisée", "Non conforme"];
-    res.json({
-      machines: visibleMachines.length,
-      techniciens: visibleEmployees.filter(row => row.actif === true).length,
-      pannesOuvertes: panneRows.filter(row => row.statut !== "Close").length,
-      pannesFermees: panneRows.filter(row => row.statut === "Close" && String(row.date_panne || "").startsWith(month)).length,
-      pmProgrammee: pmRows.filter(row => !realized.includes(row.statut) && (String(row.date_prevue || "").startsWith(month) || String(row.date_prevue || "") < `${month}-01`)).length,
-      pmRealisees: pmRows.filter(row => realized.includes(row.statut) && String(row.date_prevue || "").startsWith(month)).length,
-      recentPannes: panneRows.slice().sort((a, b) => String(b.date_panne || "").localeCompare(String(a.date_panne || ""))).slice(0, 6),
-      upcomingPM: pmRows.filter(row => !realized.includes(row.statut)).slice().sort((a, b) => String(a.date_prevue || "").localeCompare(String(b.date_prevue || ""))).slice(0, 5),
-      month
+    const month=localTimestamp().slice(0,7),realized=["Réalisée","Non conforme"];
+    const allowedMachines=machines.filter(row=>Number(row.actif)===1);
+    return res.json({
+      machines:allowedMachines.length,
+      techniciens:employees.filter(row=>row.actif===true).length,
+      pannesOuvertes:pannes.filter(row=>row.statut!=="Close").length,
+      pannesFermees:pannes.filter(row=>row.statut==="Close"&&String(row.date_panne||"").startsWith(month)).length,
+      pmProgrammee:pm.filter(row=>!realized.includes(row.statut)&&(String(row.date_prevue||"").startsWith(month)||String(row.date_prevue||"")<month+"-01")).length,
+      pmRealisees:pm.filter(row=>realized.includes(row.statut)&&String(row.date_prevue||"").startsWith(month)).length,
+      recentPannes:pannes.slice().sort((a,b)=>String(b.date_panne||"").localeCompare(String(a.date_panne||""))).slice(0,6),
+      upcomingPM:pm.filter(row=>!realized.includes(row.statut)).slice().sort((a,b)=>String(a.date_prevue||"").localeCompare(String(b.date_prevue||""))).slice(0,5),
+      scope:{department:isAdmin(req.user)?"Tous les départements":req.user.service||"Non affecté",
+             locations:units,lead:isLead(req.user),admin:isAdmin(req.user)},month
     });
-  } catch (error) {
-    res.status(502).json({ error: `Chargement du tableau de bord Supabase impossible: ${error.message}` });
-  }
+  }catch(error){return res.status(502).json({error:"Chargement du tableau de bord impossible : "+error.message});}
 });
-
 
 
 app.get("/api/modules/:module", requireAuth, (req, res, next) => requireModule(req.params.module)(req, res, next), async (req, res) => {
   const module = req.params.module;
   if (module === "machines") {
-    try { return res.json(await supabaseReadAll("machines", "?select=*&order=tag.asc,id.asc")); }
+    try { return res.json(await visibleMachineRows(req.user)); }
     catch (error) { return res.status(502).json({ error: `Chargement machines impossible: ${error.message}` }); }
   }
   if (module === "effectif") {
