@@ -586,4 +586,5 @@ export const EXTRA_EN = {
   "Si plusieurs départements interviennent dans la même localisation, sélectionnez une machine à la fois.": "If several departments work in the same location, choose one machine at a time.",
   "Machines concernées :": "Affected machines:",
   "(sans machine)": "(no machine)",
+  "Les anciennes PM dépourvues de département sont invisibles aux utilisateurs non administrateurs. Choisissez la localisation et le département réel, puis consultez l'aperçu avant de confirmer. Les dates et résultats des PM restent inchangés. Si plusieurs départements interviennent dans la même localisation, sélectionnez une machine à la fois.": "Historical PM without an assigned department are hidden from non-admin users. Choose the correct location and department, preview, then confirm. PM dates and results will not change. If several departments work in the same location, choose one machine at a time.",
 };
