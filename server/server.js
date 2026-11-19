@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 import { registerExcelRoutes } from "./bulkExcel.js";
 import { readAllSupabase } from "./paginatedSupabase.js";
 import { localisationSite, SITES } from "../client/src/locationModel.js";
+import {isAdmin,isLead,permittedModule,sameDepartment,machineInDepartment,panneInDepartment,pmInDepartment,employeeOwnsPanne,panneEditable,nameAccess} from "../client/src/accessPolicy.js";
 import { createSettingsHandlers } from "./desktopSettings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -565,21 +566,7 @@ function roleFor(user) {
   return fonction.includes("superviseur") || fonction.includes("supervisor") ? "superviseur" : "technicien";
 }
 
-async function userUnits(user) {
-  if (user.role === "admin" || user.toutes_unites) {
-    const remoteMachines = await supabaseRequest("machines", { query: "?select=unite&actif=eq.1" });
-    return [...new Set(remoteMachines.map(row => row.unite).filter(Boolean))].sort();
-  }
-  const remoteUserId = user.supabase_id || user.id;
-  if (typeof remoteUserId === "string" && remoteUserId.includes("-")) {
-    const rows = await supabaseRequest("effectif_unites", {
-      query: `?select=unite&effectif_id=eq.${encodeURIComponent(remoteUserId)}&order=unite.asc`
-    });
-    return rows.map(row => row.unite).filter(Boolean);
-  }
-  return dbAll("SELECT unite FROM technicien_unites WHERE id_technicien=? ORDER BY unite", [user.id])
-    .map(row => row.unite);
-}
+async function userUnits(user){return allowedUnitsForUser(user);}
 
 
 // Isolation métier : le service est issu exclusivement du compte authentifié.
@@ -618,7 +605,14 @@ async function remoteEffectifWithUnits(user) {
     if (!unitsByEmployee.has(key)) unitsByEmployee.set(key, []);
     unitsByEmployee.get(key).push(association.unite);
   }
-  return employees.filter(employee=>!isElectrician(user) || normService(employee.service)==="electricite").map(employee => {
+  const units=new Set(await allowedUnitsForUser(user));
+  return employees.filter(employee=>{
+    if(isAdmin(user))return true;
+    if(!isLead(user)||!sameDepartment(user,employee.service))return false;
+    const linked=unitsByEmployee.get(String(employee.id))||[];
+    return linked.some(unit=>units.has(unit))||
+      (employee.toutes_unites&&SITES.some(site=>String(employee.site||"").includes(site)&&[...units].some(unit=>localisationSite(unit)===site)));
+  }).map(employee => {
     const { password_hash, ...safeEmployee } = employee;
     return { ...safeEmployee, is_admin: employee.role==="admin", units: unitsByEmployee.get(String(employee.id)) || [] };
   });
@@ -643,46 +637,68 @@ function machineFieldsFromBody(body, includeCreation = false) {
 }
 
 
-async function allowedUnitsForUser(user) {
-  if (user.role === "admin" || user.toutes_unites) {
-    const machines = await supabaseRequest("machines", { query: "?select=unite&actif=eq.1" });
-    return [...new Set(machines.map(row => row.unite).filter(Boolean))];
+async function allowedUnitsForUser(user){
+  if(isAdmin(user)){
+    const machines=await supabaseReadAll("machines","?select=id,unite&order=id.asc");
+    const refs=await supabaseReadAll("effectif_unites","?select=effectif_id,unite&order=unite.asc,effectif_id.asc");
+    return [...new Set([...machines,...refs].map(row=>row.unite).filter(Boolean))].sort();
   }
-  const id = user.supabase_id || user.id;
-  const links = await supabaseRequest("effectif_unites", {
-    query: `?select=unite&effectif_id=eq.${encodeURIComponent(id)}&order=unite.asc`
-  });
-  return links.map(row => row.unite).filter(Boolean);
+  const id=user?.supabase_id||user?.id;
+  if(!id)return [];
+  let assigned=[];
+  if(String(id).includes("-")){
+    assigned=await supabaseRequest("effectif_unites",{
+      query:"?select=unite&effectif_id=eq."+encodeURIComponent(id)+"&order=unite.asc"
+    });
+  }else{
+    assigned=dbAll("SELECT unite FROM technicien_unites WHERE id_technicien=? ORDER BY unite",[id]);
+  }
+  let units=[...new Set(assigned.map(row=>row.unite).filter(Boolean))];
+  // 'toutes_unites' does not bypass the user's site or department.
+  if(user.toutes_unites){
+    const sites=SITES.filter(site=>String(user.site||"").includes(site));
+    if(sites.length){
+      const machines=await supabaseReadAll("machines","?select=id,unite,site&order=id.asc");
+      units.push(...machines.filter(m=>sites.includes(m.site||localisationSite(m.unite))).map(m=>m.unite));
+    }
+  }
+  const sites=SITES.filter(site=>String(user.site||"").includes(site));
+  if(sites.length)units=units.filter(loc=>sites.includes(localisationSite(loc)));
+  return [...new Set(units)].sort();
 }
 
-async function remoteModuleRows(module, user) {
-  const units = await allowedUnitsForUser(user);
-  let rows = [];
-  if (module === "liste" || module === "saisie") {
-    rows = await supabaseReadAll("pannes", "?select=*&order=id.desc");
-    const visible=rows.filter(row=>units.includes(row.unite));
-    if (!isElectrician(user)) return visible;
-    const names=await electricServiceNames();
-    return visible.filter(row=>electricPanne(row,names));
+async function visibleMachineRows(user){
+  const units=new Set(await allowedUnitsForUser(user));
+  const rows=await supabaseReadAll("machines","?select=*&order=tag.asc,id.asc");
+  return rows.filter(row=>isAdmin(user)||(units.has(row.unite)&&machineInDepartment(user,row)));
+}
+
+async function visibleEmployees(user){
+  const rows=await remoteEffectifWithUnits(user);
+  return rows;
+}
+
+async function remoteModuleRows(module,user){
+  const units=new Set(await allowedUnitsForUser(user));
+  if(module==="liste"||module==="saisie"){
+    const rows=await supabaseReadAll("pannes","?select=*&order=id.desc");
+    return rows.filter(row=>units.has(row.unite)&&panneInDepartment(user,row));
   }
-  if (module === "pm") {
-    rows = await supabaseReadAll("pm_programmees", "?select=*&order=date_prevue.desc,id.desc");
-    const visible=rows.filter(row=>units.includes(row.unite));
-    if (!isElectrician(user)) return visible;
-    const names=await electricServiceNames();
-    return visible.filter(row=>electricPM(row,names));
+  if(module==="pm"){
+    const rows=await supabaseReadAll("pm_programmees","?select=*&order=date_prevue.desc,id.desc");
+    return rows.filter(row=>units.has(row.unite)&&pmInDepartment(user,row));
   }
-  if (module === "operating") {
-    const [entries, machines] = await Promise.all([
-      supabaseReadAll("operating_time", "?select=*&order=date_jour.desc,id.desc"),
-      supabaseReadAll("machines", "?select=id,tag,unite&order=id.asc")
+  if(module==="operating"){
+    const [entries,machines]=await Promise.all([
+      supabaseReadAll("operating_time","?select=*&order=date_jour.desc,id.desc"),
+      visibleMachineRows(user)
     ]);
-    const unitByTag = new Map(machines.map(machine => [machine.tag, machine.unite]));
-    return entries.filter(row => units.includes(unitByTag.get(row.machine)));
+    const accessibleTags=new Set(machines.map(m=>m.tag));
+    return entries.filter(row=>accessibleTags.has(row.machine));
   }
-  if (module === "sop") {
-    rows = await supabaseRequest("sop", { query: "?select=*&order=code.asc&limit=1000" });
-    return rows.filter(row => !row.unite || units.includes(row.unite));
+  if(module==="sop"){
+    const rows=await supabaseReadAll("sop","?select=*&order=id.desc");
+    return rows.filter(row=>!row.unite||units.has(row.unite));
   }
   throw new Error("Module non pris en charge");
 }
@@ -692,23 +708,28 @@ function currentUser(req) {
   return readSessionToken(token);
 }
 
-function requireAuth(req, res, next) {
-  const user = currentUser(req);
-  if (!user) return res.status(401).json({ error: "Session expirée" });
-  const localEmployee = user.matricule
-    ? dbGet("SELECT id FROM techniciens WHERE matricule=? LIMIT 1", [user.matricule])
-    : null;
-  req.user = {
-    ...user,
-    supabase_id: user.supabase_id || (typeof user.id === "string" ? user.id : null),
-    id: localEmployee?.id ?? user.id
-  };
-  next();
+async function requireAuth(req,res,next){
+  const tokenUser=currentUser(req);
+  if(!tokenUser)return res.status(401).json({error:"Session expirée"});
+  try{
+    if(SUPABASE_URL&&SUPABASE_ANON_KEY){
+      const id=tokenUser.supabase_id||tokenUser.id;
+      if(!id)return res.status(403).json({error:"Compte non identifié."});
+      const rows=await supabaseRequest("effectif",{query:"?select=id,matricule,nom,prenom,role,fonction,service,site,toutes_unites,actif&id=eq."+encodeURIComponent(id)+"&limit=1"});
+      const person=rows[0];
+      if(!person||person.actif!==true)return res.status(403).json({error:"Compte désactivé ou inconnu."});
+      req.user={...tokenUser,...person,supabase_id:person.id,role:person.role||"technicien"};
+    }else{
+      const localEmployee=tokenUser.matricule?dbGet("SELECT id FROM techniciens WHERE matricule=? LIMIT 1",[tokenUser.matricule]):null;
+      req.user={...tokenUser,id:localEmployee?.id??tokenUser.id,role:roleFor(tokenUser)};
+    }
+    next();
+  }catch(error){return res.status(503).json({error:"Vérification du compte indisponible."});}
 }
 
 function requireModule(module) {
   return async (req, res, next) => {
-    if (!modules[module]?.includes(req.user.role)) return res.status(403).json({ error: "Accès refusé" });
+    if (!modules[module]?.includes(req.user.role)||!permittedModule(req.user,module)) return res.status(403).json({ error: "Accès refusé" });
     if (module === "parametres") {
       try {
         const id=req.user.supabase_id||req.user.id;
