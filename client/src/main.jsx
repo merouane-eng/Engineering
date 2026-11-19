@@ -889,6 +889,17 @@ function App() {
   const [module, setModule] = useState("accueil");
   const [menuOpen, setMenuOpen] = useState(false);
   const [excelRefreshKey,setExcelRefreshKey] = useState(0);
+  useEffect(()=>{
+    if(!user?.id)return;
+    api("/api/me").then(fresh=>{
+      if(!fresh?.id||!fresh?.role)return;
+      const next={...user,...fresh};
+      if(JSON.stringify(next)!==JSON.stringify(user)){
+        localStorage.setItem("engineering_user",JSON.stringify(next));
+        setUser(next);
+      }
+    }).catch(()=>{});
+  },[user?.id]);
   const login = value => { localStorage.setItem("engineering_user", JSON.stringify(value)); setUser(value); };
   const logout = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch {} localStorage.removeItem("engineering_token"); localStorage.removeItem("engineering_user"); setUser(null); };
   if (!user) return <Login onLogin={login} language={language} setLanguage={setLanguage} />;
