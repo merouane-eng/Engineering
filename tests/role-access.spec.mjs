@@ -77,3 +77,38 @@ for(const size of [{width:390,height:844},{width:1366,height:768}]){
   });
  }
 }
+
+
+test("Shift Leader U4 voit les PM historiques non attribuées sans pouvoir les réaliser",async({browser})=>{
+ const user={...leader,id:"emp-u4",site:"Site 01",service:"Maintenance"};
+ const context=await browser.newContext({viewport:{width:390,height:844},serviceWorkers:"block"});
+ const page=await context.newPage(),errors=[];
+ page.on("pageerror",error=>errors.push(error.message));
+ await page.addInitScript(person=>{
+   localStorage.setItem("engineering_token","pm-u4");
+   localStorage.setItem("engineering_user",JSON.stringify(person));
+   localStorage.setItem("engineering_language","fr");
+ },user);
+ const legacy=Array.from({length:265},(_,i)=>({
+   id:i+1,machine_tag:"U4-M1",machine_designation:"Pompe",unite:"U4",
+   service_intervenant:null,consultation_seule:true,attribution_requise:true,
+   frequence:"MONTHLY",statut:"Planifiée",date_prevue:"2026-12-20",responsable:null
+ }));
+ await page.route("**/api/**",route=>{
+   const url=new URL(route.request().url()).pathname;
+   let result=response(url,user);
+   if(url==="/api/modules/pm")result=legacy;
+   if(url==="/api/pm/context")result={...result,units:["U4"],machines:[{...machine,tag:"U4-M1",unite:"U4"}]};
+   if(url==="/api/dashboard")result={...result,scope:{department:"Maintenance",locations:["U4"],lead:true}};
+   return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(result)});
+ });
+ await page.goto(APP);
+ await page.locator(".mobileMenu").click();
+ await page.locator("aside .module-pm").click();
+ await expect(page.getByText("265 / 265 PM affichée(s)")).toBeVisible();
+ await expect(page.getByText("Non attribuée · consultation seule").first()).toBeVisible();
+ await expect(page.getByText("Affectation requise").first()).toBeVisible();
+ await expect(page.getByRole("button",{name:"Réaliser"})).toHaveCount(0);
+ expect(errors).toEqual([]);
+ await context.close();
+});
