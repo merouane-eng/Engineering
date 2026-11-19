@@ -2,13 +2,14 @@
    Aucun remplacement silencieux des données existantes. */
 import crypto from "node:crypto";
 import { readXlsx, makeXlsx } from "./excel.js";
+import {localisationSite,SITES} from "../client/src/locationModel.js";
 
 export const EXCEL_MODULES = {
   machines: {
     title:"Machines",table:"machines",key:["tag"],
-    fields:["tag","designation","unite","groupe","zone","marque","modele","numero_serie","date_mise_service","actif","commentaire"],
+    fields:["tag","designation","site","unite","zone","marque","modele","numero_serie","date_mise_service","actif","commentaire"],
     required:["tag","designation","unite"],
-    help:["Une machine déjà présente (même tag) est ignorée.","Actif = Oui ou Non.","Les unités U3-1 et U3-2 sont distinctes."]
+    help:["Une machine existante (même tag) est ignorée.","Site 01 ou Site 02. Actif : Oui ou Non.","Localisations Microbiologie et QC : code interne distinct par site (ex : QC__S02)."]
   },
   effectif:{
     title:"Effectif",table:"effectif",key:["matricule"],
@@ -17,18 +18,18 @@ export const EXCEL_MODULES = {
     help:["Matricule existant : seuls site, initiale et contrat peuvent être complétés ; aucun rôle, nom ou compte n'est remplacé.",
       "Nouveau salarié : nom, prénom, service et fonction obligatoires ; compte désactivé pour la connexion jusqu'à configuration par l'administrateur.",
       "CDI sans date de fin ; CDD avec date de fin obligatoire.","Initiale facultative ; les cellules vides ne suppriment pas les valeurs existantes.",
-      "Unités séparées par ; (exemple U3-1;SG02). Site calculé selon les unités."]
+      "Localisations séparées par ; (exemple U3-1;QC__S02). Site calculé selon les localisations."]
   },
   pannes:{
     title:"Pannes / Work Orders",table:"pannes",key:["wo"],
-    fields:["wo","date_panne","heure_panne","date_debut","date_fin","unite","machine","area","service","probleme","technicien","downtime","statut","commentaire","pieces_consommees"],
+    fields:["wo","date_panne","heure_panne","date_debut","date_fin","site","unite","machine","area","service","probleme","technicien","downtime","statut","commentaire","pieces_consommees"],
     required:["wo","date_panne","unite","machine","probleme"],
     help:["Le numéro WO identifie les doublons.","Les dates et les heures d'intervention restent dans les colonnes dédiées.",
       "Durée d'arrêt (downtime) en minutes.","Les pièces consommées sont conservées sous forme de texte."]
   },
   pm:{
     title:"Maintenance préventive",table:"pm_programmees",key:["machine_tag","date_prevue"],
-    fields:["machine_tag","machine_designation","unite","groupe","frequence","tolerance_jours","date_prevue","statut","responsable","service_intervenant","commentaire","motif_report"],
+    fields:["machine_tag","machine_designation","site","unite","frequence","tolerance_jours","date_prevue","statut","responsable","service_intervenant","commentaire","motif_report"],
     required:["machine_tag","unite","frequence","date_prevue"],
     help:["Une PM existante (machine + date prévue) est ignorée.","Les PM réalisées ne sont jamais modifiées.",
       "Service intervenant : Électricité, Mécanique, etc. Si vide, la PM reste non attribuée."]
@@ -49,9 +50,10 @@ const cleanHeader = value => String(value||"").normalize("NFD").replace(/[\u0300
 const aliases = {
   type_de_contrat:"type_contrat",date_de_fin_de_contrat:"date_fin_contrat",
   fin_de_contrat:"date_fin_contrat",unite_s:"unites",unit_s:"unites",
+  localisation:"unite",localisations:"unites",location:"unite",
   date_de_panne:"date_panne",date_d_intervention:"date_debut",numero_wo:"wo",
   work_order:"wo",initiales:"initiale",initials:"initiale",
-  groupe_machine:"groupe",heures_de_marche:"heures_marche",
+  heures_de_marche:"heures_marche",
   machine_tag:"machine_tag",site_01_ou_02:"site"
 };
 const num = value => {
@@ -95,7 +97,7 @@ function normalizeRow(row,fields){
   return payload;
 }
 const monthNames=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
-const siteForUnit = u => /^(U6|U06|SG02)$/i.test(coerce(u))?"Site 02":"Site 01";
+const siteForUnit = localisationSite;
 const siteBoth="Site 01; Site 02";
 function normalizeSite(value){
   const s=coerce(value);
@@ -117,15 +119,18 @@ function normalizeForSave(module,row,context,existing){
   const now=new Date().toISOString();
   const common={uuid:crypto.randomUUID(),date_creation:now.replace("T"," ").slice(0,19),source:"web-import"};
   if(module==="machines"){
-    return {...common,...Object.fromEntries(Object.entries(row).filter(([k])=>EXCEL_MODULES.machines.fields.includes(k))),
-      actif:bool(row.actif,true)?1:0};
+    const site=coerce(row.site)||localisationSite(row.unite);
+    if(!SITES.includes(site)||site!==localisationSite(row.unite))
+      throw new Error("Site incohérent avec la localisation.");
+    const data=Object.fromEntries(Object.entries(row).filter(([k])=>EXCEL_MODULES.machines.fields.includes(k)));
+    return {...common,...data,site,actif:bool(row.actif,true)?1:0};
   }
   if(module==="effectif"){
     const unitCodes=coerce(row.unites).split(/[;,]/).map(s=>s.trim()).filter(Boolean);
     const all=bool(row.toutes_unites,false);
     const siteDerived=all?siteBoth:[...new Set(unitCodes.map(siteForUnit))].sort().join("; ");
     const s=normalizeSite(row.site);
-    if(siteDerived&&s&&s!==siteDerived)throw new Error("Site incohérent avec les unités affectées.");
+    if(siteDerived&&s&&s!==siteDerived)throw new Error("Site incohérent avec les localisations affectées.");
     const desiredSite=siteDerived||s||null;
     const contractData=contract(row.type_contrat,row.date_fin_contrat,row.date_recrutement,existing);
     if(existing) {
@@ -146,8 +151,9 @@ function normalizeForSave(module,row,context,existing){
       units:unitCodes};
   }
   if(module==="pannes"){
+    if(coerce(row.site)&&coerce(row.site)!==localisationSite(row.unite))throw new Error("Site incompatible avec la localisation.");
     const machine=context.machines.get(coerce(row.machine));
-    if(machine&&machine.unite!==coerce(row.unite))throw new Error("Machine affectée à une autre unité.");
+    if(machine&&machine.unite!==coerce(row.unite))throw new Error("Machine affectée à une autre localisation.");
     if(!machine&&!["SG01","SG02"].includes(coerce(row.unite)))
       throw new Error("Machine inconnue : importer le parc Machines d'abord.");
     const downtime=num(row.downtime??0);
@@ -161,13 +167,14 @@ function normalizeForSave(module,row,context,existing){
       mois:monthNames[Number(dateValue(row.date_panne).slice(5,7))-1]||null};
   }
   if(module==="pm"){
+    if(coerce(row.site)&&coerce(row.site)!==localisationSite(row.unite))throw new Error("Site incompatible avec la localisation.");
     const machine=context.machines.get(coerce(row.machine_tag));
-    if(!machine||machine.unite!==coerce(row.unite))throw new Error("Machine inconnue ou unité incohérente.");
+    if(!machine||machine.unite!==coerce(row.unite))throw new Error("Machine inconnue ou localisation incohérente.");
     const date=dateValue(row.date_prevue),tol=num(row.tolerance_jours??7);
     if(tol===null||tol<0||tol>365)throw new Error("Tolérance PM invalide.");
     if(coerce(row.statut).toLowerCase().includes("réalis"))throw new Error("Une PM réalisée ne peut pas être importée comme PM programmée.");
     return {...common,machine_tag:coerce(row.machine_tag),machine_designation:coerce(row.machine_designation)||machine.designation,
-      unite:coerce(row.unite),groupe:coerce(row.groupe)||machine.groupe||null,
+      unite:coerce(row.unite),
       frequence:coerce(row.frequence),tolerance_jours:tol,date_prevue:date,
       annee:Number(date.slice(0,4)),mois:monthNames[Number(date.slice(5,7))-1],
       statut:coerce(row.statut)||"Planifiée",responsable:coerce(row.responsable)||null,
@@ -207,7 +214,7 @@ async function getRows(module,supabaseRequest,remoteEffectifWithUnits,user){
 function spreadsheet(module,rows,template=false) {
   const schema=EXCEL_MODULES[module];
   const values=template?[]:rows.map(row=>schema.fields.map(key=>{
-    const value=row[key];
+    const value=key==="site"&&row.site===undefined?localisationSite(row.unite):row[key];
     if(typeof value==="boolean")return value?"Oui":"Non";
     return value===null||value===undefined?"":value;
   }));
@@ -216,7 +223,7 @@ function spreadsheet(module,rows,template=false) {
     ["Lignes","300 maximum par import. Découper les gros fichiers si nécessaire."],
     ...schema.required.map(field=>[field,"Obligatoire pour un nouvel enregistrement."]),
     ...schema.help.map((s,i)=>["Note "+(i+1),s])];
-  return makeXlsx(schema.fields,values,{name:schema.title.replace(/\//g,"-"),instructions:notes});
+  return makeXlsx(schema.fields.map(key=>key==="unite"?"Localisation":key==="unites"?"Localisations":key),values,{name:schema.title.replace(/\//g,"-"),instructions:notes});
 }
 function filename(module,suffix){
   const day=new Date().toISOString().slice(0,10);
@@ -230,7 +237,7 @@ async function parseValidated(module,encoded,deps){
   const cells=readXlsx(bytes);
   const schema=EXCEL_MODULES[module],headers=cells[0].map(value=>aliases[cleanHeader(value)]||cleanHeader(value));
   if(headers.some(h=>FORBIDDEN.has(h)))throw new Error("Colonnes de connexion ou système interdites : utiliser le template Excel.");
-  const unknown=headers.filter(h=>h&&!schema.fields.includes(h));
+  const unknown=headers.filter(h=>h&&!schema.fields.includes(h)&&h!=="groupe");
   if(unknown.length)throw new Error("Colonnes non reconnues : "+unknown.slice(0,5).join(", ")+". Télécharger le template.");
   if(new Set(headers.filter(Boolean)).size!==headers.filter(Boolean).length)throw new Error("Colonnes en double.");
   for(const required of schema.required)if(!headers.includes(required))throw new Error("Colonne obligatoire absente : "+required);
@@ -328,7 +335,7 @@ export function registerExcelRoutes(app,{requireAuth,supabaseRequest,remoteEffec
                 await supabaseRequest("effectif_unites",{method:"POST",
                   body:action.units.map(unite=>({effectif_id:created[0].id,unite}))});
               }catch(e){
-                failures.push({line:action.line,message:"Collaborateur créé, mais unités non associées : "+e.message});
+                failures.push({line:action.line,message:"Collaborateur créé, mais localisations non associées : "+e.message});
               }
             }
             imported++;continue;
