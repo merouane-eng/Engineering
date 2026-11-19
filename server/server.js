@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { registerExcelRoutes } from "./bulkExcel.js";
 import { readAllSupabase } from "./paginatedSupabase.js";
+import { registerLegacyPmRoutes } from "./legacyPm.js";
 import { localisationSite, SITES } from "../client/src/locationModel.js";
 import {isAdmin,isLead,permittedModule,sameDepartment,machineInDepartment,panneInDepartment,pmInDepartment,employeeOwnsPanne,panneEditable,nameAccess} from "../client/src/accessPolicy.js";
 import { createSettingsHandlers } from "./desktopSettings.js";
@@ -1742,6 +1743,7 @@ app.delete("/api/tables/:table/:id", requireAuth, async (req, res) => {
 
 
 
+registerLegacyPmRoutes(app,{requireAuth,requireAdmin:requireModule("parametres"),supabaseReadAll,supabaseRequest,allowedUnitsForUser,normService});
 registerExcelRoutes(app,{requireAuth,supabaseRequest,remoteEffectifWithUnits,localTimestamp});
 const desktopSettings=createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits});
 desktopSettings.register(app,requireAuth);
