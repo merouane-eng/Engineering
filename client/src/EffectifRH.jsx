@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Users, Plus, Save, X, Search, RotateCcw, Layers, MapPin, CheckCircle2, CalendarDays, TrendingUp, BarChart3, ArrowUpRight, CircleAlert, Filter, Activity } from "lucide-react";
 import "./styles.css";
+import {SITES,localisationSite,localisationName,localisationLabel} from "./locationModel.js";
 
-const SITES = ["Site 01", "Site 02"];
 const MONTHS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
 const trueValue = v => v === true || v === 1 || v === "1" || v === "true";
 const clean = s => String(s || "").trim();
 const unique = xs => [...new Set(xs.filter(Boolean).map(clean).filter(Boolean))].sort((a,b) => a.localeCompare(b, "fr"));
 const employeeUnits = row => Array.isArray(row.units) ? row.units : [];
-const siteForUnit = u => /^(U6|U06|SG02)$/i.test(clean(u)) ? "Site 02" : "Site 01";
+const siteForUnit = localisationSite;
 const getSites = row => {
   const codes = employeeUnits(row);
   if (trueValue(row.toutes_unites)) return SITES;
@@ -120,7 +120,7 @@ function EffectifRH({ user, api }) {
       <div className="ef-filter"><label><MapPin/> Site</label><select value={site} onChange={e=>changeSite(e.target.value)}><option value="">Tous les sites</option>{SITES.map(s=><option key={s} value={s}>{s}</option>)}</select></div>
       <div className="ef-filter"><label><Layers/> Service</label><select value={service} onChange={e=>changeService(e.target.value)}><option value="">Tous les services</option>{serviceOptions.map(v=><option key={v} value={v}>{v}</option>)}</select></div>
       <div className="ef-filter"><label><Users/> Fonction</label><select value={fonction} onChange={e=>setFonction(e.target.value)}><option value="">Toutes les fonctions</option>{functionOptions.map(v=><option key={v} value={v}>{v}</option>)}</select></div>
-      <div className="ef-filter"><label><MapPin/> Unité</label><select value={unite} onChange={e=>setUnite(e.target.value)}><option value="">Toutes les unités</option>{unitOptions.map(v=><option key={v} value={v}>{v}</option>)}</select></div>
+      <div className="ef-filter"><label><MapPin/> Localisation</label><select value={unite} onChange={e=>setUnite(e.target.value)}><option value="">Toutes les localisations</option>{unitOptions.map(v=><option key={v} value={v}>{localisationName(v,{withSite:true})}</option>)}</select></div>
       <div className="ef-filter"><label><Filter/> Statut</label><select value={status} onChange={e=>setStatus(e.target.value)}><option value="all">Tous les statuts</option><option value="active">Actifs</option><option value="inactive">Inactifs</option></select></div>
       <button className="ef-reset" onClick={reset}><RotateCcw/> Effacer</button>
       {admin&&<button className="primary ef-add" onClick={newForm}><Plus/> Ajouter</button>}
@@ -163,7 +163,7 @@ function EffectifRH({ user, api }) {
         <div className="ef-personMeta">
           <div className="ef-metaRow"><span>Service</span><strong>{row.service||"—"}</strong></div>
           <div className="ef-metaRow"><span>Site</span><strong>{siteLabel(row)}</strong></div>
-          <div className="ef-metaRow"><span>Unités</span><div className="ef-unitTags">{trueValue(row.toutes_unites)?<span>Toutes les unités</span>:units.length?units.map(v=><span key={v}>{v}</span>):<span>Non affecté</span>}</div></div>
+          <div className="ef-metaRow"><span>Localisations</span><div className="ef-unitTags">{trueValue(row.toutes_unites)?<span>Toutes les localisations</span>:units.length?units.map(v=><span key={v}>{v}</span>):<span>Non affecté</span>}</div></div>
           <div className="ef-metaRow"><span>Type de contrat</span><strong className="ef-contractBadge">{row.type_contrat||"Non renseigné"}</strong></div>
           <div className="ef-metaRow"><span>Fin de contrat</span><strong className={expired?"ef-expired":""}>{row.type_contrat==="CDD"?formatDate(row.date_fin_contrat):"—"}{expired?" · Échu":""}</strong></div>
           <div className="ef-metaRow"><span>Téléphone</span><strong>{row.telephone||"—"}</strong></div>
@@ -187,9 +187,9 @@ function EffectifRH({ user, api }) {
         <label>Date de départ<input type="date" value={form.date_depart||""} onChange={e=>patch("date_depart",e.target.value)}/></label>
         <label>Téléphone<input value={form.telephone||""} onChange={e=>patch("telephone",e.target.value)}/></label>
         <label>Email<input type="email" value={form.email||""} onChange={e=>patch("email",e.target.value)}/></label>
-        <label>Site<select value={explicitSite} disabled={selectedSites.length>0} onChange={e=>patch("site",e.target.value)}><option value="">Non renseigné</option>{SITES.map(s=><option key={s} value={s}>{s}</option>)}<option value="Site 01; Site 02">Les deux sites</option></select><small>Automatique si des unités sont affectées.</small></label>
+        <label>Site<select value={explicitSite} disabled={selectedSites.length>0} onChange={e=>patch("site",e.target.value)}><option value="">Non renseigné</option>{SITES.map(s=><option key={s} value={s}>{s}</option>)}<option value="Site 01; Site 02">Les deux sites</option></select><small>Automatique si des localisations sont affectées.</small></label>
       </div>
-      <fieldset className="unitPicker"><legend>Affectations aux unités</legend><label><input type="checkbox" checked={Boolean(form.toutes_unites)} onChange={e=>patch("toutes_unites",e.target.checked)}/> Toutes les unités</label>
+      <fieldset className="unitPicker"><legend>Affectations aux localisations</legend><label><input type="checkbox" checked={Boolean(form.toutes_unites)} onChange={e=>patch("toutes_unites",e.target.checked)}/> Toutes les localisations</label>
         {!form.toutes_unites&&<div className="unitGrid">{allUnitOptions.map(u=><label key={u}><input type="checkbox" checked={form.units.includes(u)} onChange={()=>toggleUnit(u)}/>{u==="SG01"?"Services généraux — Site 01":u==="SG02"?"Services généraux — Site 02":u}</label>)}</div>}
       </fieldset>
       <div className="formGrid"><label><input type="checkbox" checked={Boolean(form.actif)} onChange={e=>patch("actif",e.target.checked)}/> Actif</label><label><input type="checkbox" checked={Boolean(form.is_admin)} onChange={e=>patch("is_admin",e.target.checked)}/> Administrateur</label></div>
