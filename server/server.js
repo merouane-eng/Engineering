@@ -916,7 +916,7 @@ app.get("/api/operating/context", requireAuth, async (req, res) => {
       supabaseReadAll("operating_time","?select=id,machine&order=id.asc")
     ]);
     const tracked = new Set(entries.map(row => row.machine));
-    const machines = allMachines.filter(row => Number(row.actif)===1 && units.includes(row.unite) && (tracked.has(row.tag) || isLead(req.user)));
+    const machines = allMachines.filter(row => Number(row.actif)===1 && units.includes(row.unite));
     res.json({ units, machines, operator: [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim() });
   } catch (error) { res.status(502).json({ error: `Chargement Operating Time impossible: ${error.message}` }); }
 });
@@ -972,6 +972,12 @@ async function attachPieceToMachine(piece, machine) {
 app.get("/api/pieces/context", requireAuth, async (req, res) => {
   try {
     const machine = String(req.query.machine || "").trim();
+    if(machine){
+      const found=await supabaseRequest("machines",{query:"?select=tag,unite,departement&tag=eq."+encodeURIComponent(machine)+"&limit=1"});
+      const units=await allowedUnitsForUser(req.user);
+      if(!found[0]||!units.includes(found[0].unite)||!machineInDepartment(req.user,found[0]))
+        return res.status(403).json({error:"Machine hors de votre périmètre."});
+    }
     const [catalog, links, history] = await Promise.all([
       supabaseRequest("pieces", { query: "?select=id,reference,nom,description,actif&actif=eq.true&order=nom.asc&limit=500" }),
       machine
@@ -988,13 +994,16 @@ app.get("/api/pieces/context", requireAuth, async (req, res) => {
       reference: link.reference || catalogById.get(String(link.piece_id))?.reference || "",
       nom: link.nom || catalogById.get(String(link.piece_id))?.nom || ""
     })).filter(piece => piece.nom);
-    res.json({ catalog, machineParts, history });
+    const visiblePannes=machine&&!isAdmin(req.user)?await remoteModuleRows("liste",req.user):[];
+    const ids=new Set(visiblePannes.map(row=>String(row.id)));
+    res.json({catalog,machineParts,history:isAdmin(req.user)?history:history.filter(h=>ids.has(String(h.panne_id)))});
   } catch (error) {
     res.status(502).json({ error: `Chargement du référentiel pièces impossible: ${error.message}` });
   }
 });
 
 app.post("/api/pieces", requireAuth, async (req, res) => {
+  if(!isLead(req.user))return res.status(403).json({error:"Réservé aux responsables."});
   try {
     const nom = String(req.body.nom || "").trim();
     const reference = String(req.body.reference || "").trim() || null;
@@ -1008,9 +1017,9 @@ app.post("/api/pieces", requireAuth, async (req, res) => {
     const duplicateName = await supabaseRequest("pieces", { query: `?select=id&nom=ilike.${encodeURIComponent(nom)}&limit=1` });
     if (duplicateName.length) return res.status(409).json({ error: "Cette pièce existe déjà dans le référentiel" });
     if (machine) {
-      const machines = await supabaseRequest("machines", { query: `?select=tag,unite&tag=eq.${encodeURIComponent(machine)}&limit=1` });
+      const machines = await supabaseRequest("machines", { query: `?select=tag,unite,departement&tag=eq.${encodeURIComponent(machine)}&limit=1` });
       const allowed = await allowedUnitsForUser(req.user);
-      if (!machines[0] || !allowed.includes(machines[0].unite)) return res.status(403).json({ error: "Machine non autorisée" });
+      if (!machines[0] || !allowed.includes(machines[0].unite) || !machineInDepartment(req.user,machines[0])) return res.status(403).json({ error: "Machine non autorisée" });
     }
     const rows = await supabaseRequest("pieces", {
       method: "POST", query: "?select=*", prefer: "return=representation",
@@ -1026,12 +1035,13 @@ app.post("/api/pieces", requireAuth, async (req, res) => {
 });
 
 app.post("/api/pieces/:id/machines", requireAuth, async (req, res) => {
+  if(!isLead(req.user))return res.status(403).json({error:"Réservé aux responsables."});
   try {
     const machine = String(req.body.machine || "").trim();
     if (!machine) return res.status(400).json({ error: "Machine obligatoire" });
-    const machines = await supabaseRequest("machines", { query: `?select=tag,unite&tag=eq.${encodeURIComponent(machine)}&limit=1` });
+    const machines = await supabaseRequest("machines", { query: `?select=tag,unite,departement&tag=eq.${encodeURIComponent(machine)}&limit=1` });
     const allowed = await allowedUnitsForUser(req.user);
-    if (!machines[0] || !allowed.includes(machines[0].unite)) return res.status(403).json({ error: "Machine non autorisée" });
+    if (!machines[0] || !allowed.includes(machines[0].unite) || !machineInDepartment(req.user,machines[0])) return res.status(403).json({ error: "Machine non autorisée" });
     const pieces = await supabaseRequest("pieces", { query: `?select=id,reference,nom&actif=eq.true&id=eq.${encodeURIComponent(req.params.id)}&limit=1` });
     if (!pieces[0]) return res.status(404).json({ error: "Pièce introuvable" });
     await attachPieceToMachine(pieces[0], machine);
@@ -1189,6 +1199,9 @@ app.post("/api/pm/:id/realiser", requireAuth, async (req, res) => {
     const allowed = await allowedUnitsForUser(req.user);
     if (!allowed.includes(pm.unite)) return res.status(403).json({ error: "Localisation non autorisée" });
     if (!pmInDepartment(req.user,pm)) return res.status(403).json({ error: "PM réservée à un autre département" });
+    const machineRows=await supabaseRequest("machines",{query:"?select=tag,unite,departement&tag=eq."+encodeURIComponent(pm.machine_tag)+"&limit=1"});
+    if(!machineRows[0]||machineRows[0].unite!==pm.unite||!machineInDepartment(req.user,machineRows[0]))
+      return res.status(403).json({error:"Machine PM hors de votre département."});
     const startText = String(req.body.date_debut || "").replace("T", " ").slice(0,16);
     const endText = String(req.body.date_fin || "").replace("T", " ").slice(0,16);
     const start = new Date(startText.replace(" ","T")), end = new Date(endText.replace(" ","T"));
@@ -1259,11 +1272,11 @@ app.get("/api/effectif/context", requireAuth, requireModule("effectif"), async (
       supabaseRequest("effectif", { query: "?select=service,fonction&actif=eq.true" }),
       desktopSettings.list()
     ]);
-    const scoped=isElectrician(req.user)?employees.filter(row=>normService(row.service)==="electricite"):employees;
+    const scoped=isAdmin(req.user)?employees:employees.filter(row=>sameDepartment(req.user,row.service));
     res.json({
-      units: [...new Set([...machines.map(row => row.unite),...references.filter(r=>r.type_liste==="unite"&&r.actif).map(r=>r.valeur),"SG01","SG02"].filter(Boolean))].sort(),
-      services: [...new Set([...(!isElectrician(req.user)?references.filter(r=>r.type_liste==="service"&&r.actif).map(r=>r.valeur):[]),...scoped.map(row => row.service)].filter(Boolean))].sort(),
-      functions: [...new Set([...(!isElectrician(req.user)?references.filter(r=>r.type_liste==="fonction"&&r.actif).map(r=>r.valeur):[]),...scoped.map(row => row.fonction)].filter(Boolean))].sort()
+      units: isAdmin(req.user)?[...new Set([...machines.map(row => row.unite),...references.filter(r=>r.type_liste==="unite"&&r.actif).map(r=>r.valeur),"SG01","SG02"].filter(Boolean))].sort():await allowedUnitsForUser(req.user),
+      services: [...new Set([...(!isAdmin(req.user)?[]:references.filter(r=>r.type_liste==="service"&&r.actif).map(r=>r.valeur)),...scoped.map(row => row.service)].filter(Boolean))].sort(),
+      functions: [...new Set([...(!isAdmin(req.user)?[]:references.filter(r=>r.type_liste==="fonction"&&r.actif).map(r=>r.valeur)),...scoped.map(row => row.fonction)].filter(Boolean))].sort()
     });
   } catch (error) {
     res.status(502).json({ error: `Chargement du référentiel Supabase impossible: ${error.message}` });
