@@ -119,8 +119,9 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
     const {buffer,hash}=getFile(req);
     const matrix=readXlsx(buffer);
     const names=matrix[0].map(s=>norm(s));
-    const required=["type_liste","valeur","parent","ordre","actif"];
-    if(!required.every(name=>names.includes(name)))throw new Error("Utiliser le template Paramètres : colonnes type_liste, valeur, parent, ordre, actif.");
+    const required=["type_liste","valeur","ordre","actif"];
+    if(!required.every(name=>names.includes(name))||(!names.includes("site")&&!names.includes("parent")))
+      throw new Error("Utiliser le template Paramètres : type_liste, valeur, site, ordre, actif.");
     const rows=matrix.slice(1).filter(line=>line.some(cell=>cell!==""&&cell!==undefined&&cell!==null));
     if(rows.length>maxRows)throw new Error("300 références maximum par import.");
     const existing=await list(),refs=new Set(existing.map(r=>r.type_liste+"|"+norm(r.valeur)));
@@ -128,15 +129,21 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
     for(const [i,raw] of rows.entries()){
       try{
         const row=Object.fromEntries(names.map((n,j)=>[n,raw[j]]));
-        const type=escapeCsv(row.type_liste),value=escapeCsv(row.valeur);
-        if(!VALID.has(type)||!value||value.length>120)throw new Error("Type ou valeur invalide.");
-        const parent=escapeCsv(row.parent)||null;
+        const type=escapeCsv(row.type_liste),label=escapeCsv(row.valeur);
+        if(type==="groupe"){duplicates++;continue;} // groupes historiques conservés, jamais recréés
+        if(!VALID.has(type)||!label||label.length>120)throw new Error("Type ou valeur invalide.");
+        const rawSite=escapeCsv(row.site);
+        const site=rawSite||localisationSite(label);
+        if(type==="unite"&&rawSite&&!["Site 01","Site 02"].includes(rawSite))
+          throw new Error("Site invalide : Site 01 ou Site 02.");
+        const value=type==="unite"?localisationCode(label,site):label;
+        if(type==="unite"&&localisationSite(value)!==site)throw new Error("Localisation affectée au mauvais site.");
+        const parent=type==="unite"?null:escapeCsv(row.parent)||null;
         const key=type+"|"+norm(value);
         if(seen.has(key))throw new Error("Doublon dans le fichier.");
         seen.add(key);
         if(refs.has(key)){duplicates++;continue;}
-        if(type==="unite"&&parent&&parent!=="Site 01"&&parent!=="Site 02")throw new Error("Le site doit être Site 01 ou Site 02.");
-        actions.push({type,value,parent:type==="unite"?null:parent,line:i+2});
+        actions.push({type,value,parent,line:i+2});
       }catch(e){errors.push({line:i+2,message:e.message});}
     }
     // Les codes de localisation sont uniques par site : aucun groupe nécessaire.
@@ -201,8 +208,8 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
           if(!complete)throw new Error("La table "+table+" dépasse la limite de sauvegarde ; aucune archive partielle ne sera fournie.");
           return {name,headers:fields,rows:rows.map(r=>fields.map(f=>r[f]??""))};
         }));
-        const refs=(await list()).filter(r=>r.type_liste!=="groupe"),refFields=["type_liste","valeur","parent","ordre","actif"];
-        datasets.push({name:"Parametres",headers:refFields,rows:refs.map(r=>refFields.map(f=>r[f]??""))});
+        const refs=(await list()).filter(r=>r.type_liste!=="groupe"),refFields=["type_liste","valeur","site","ordre","actif"];
+        datasets.push({name:"Parametres",headers:refFields,rows:refs.map(r=>[r.type_liste,r.valeur,r.type_liste==="unite"?localisationSite(r.valeur):"",r.ordre,r.actif])});
         datasets.unshift({name:"Informations",headers:["Champ","Valeur"],rows:[
           ["Application","Engineering — sauvegarde globale"],
           ["Date export",new Date().toISOString()],
@@ -219,8 +226,8 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
       }));
       app.get("/api/settings/backup",requireAuth,admin,safe(async(req,res)=>{
         const refs=(await list()).filter(r=>r.type_liste!=="groupe");
-        const cols=["type_liste","valeur","parent","ordre","actif"];
-        const bytes=makeXlsx(cols,refs.map(r=>[r.type_liste,r.valeur,r.parent||"",r.ordre,r.actif?"Oui":"Non"]),{
+        const cols=["type_liste","valeur","site","ordre","actif"];
+        const bytes=makeXlsx(cols,refs.map(r=>[r.type_liste,r.valeur,r.type_liste==="unite"?localisationSite(r.valeur):"",r.ordre,r.actif?"Oui":"Non"]),{
           name:"Parametres",instructions:[
             ["Sauvegarde","Engineering — sauvegarde des listes de référence."],
             ["Fusion","Import : seules les références absentes sont ajoutées."],
