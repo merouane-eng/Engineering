@@ -7,6 +7,7 @@ import {
  pmInDepartment,panneEditable,nameAccess
 } from "../client/src/accessPolicy.js";
 import {localisationSite,SITES} from "../client/src/locationModel.js";
+import {pmVisibility} from "../client/src/pmVisibility.js";
 const src=readFileSync(new URL("../server/server.js",import.meta.url),"utf8");
 const extract=(start,end)=>{
  const a=src.indexOf(start),b=src.indexOf(end,a+start.length);
@@ -38,6 +39,7 @@ const ctx=createContext({
  supabaseReadAll:async table=>({pannes,pm_programmees:pm,machines:[]}[table]||[]),
  supabaseRequest:async table=>({effectif:employees,effectif_unites:links}[table]||[]),
  allowedUnitsForUser:async()=>["U1"],
+ visibleMachineRows:async()=>[],pmVisibility,
  isAdmin,isLead,sameDepartment,machineInDepartment,panneInDepartment,pmInDepartment,panneEditable,nameAccess,
  localisationSite,SITES,console
 });
