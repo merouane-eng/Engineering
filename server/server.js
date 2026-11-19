@@ -1004,7 +1004,7 @@ app.get("/api/stats/overview", requireAuth, requireModule("stats"), async (req,r
       remoteModuleRows("liste",req.user),
       remoteModuleRows("pm",req.user),
       remoteModuleRows("operating",req.user),
-      supabaseReadAll("machines", "?select=id,tag,designation,unite,groupe,zone,actif&order=tag.asc,id.asc")
+      supabaseReadAll("machines", "?select=id,tag,designation,site,unite,zone,actif&order=tag.asc,id.asc")
     ]);
     const allowed=new Set(units);
     // Le périmètre d'un électricien s'applique aux WO/PM avant la consolidation.
@@ -1107,7 +1107,7 @@ app.post("/api/pm", requireAuth, async (req, res) => {
     const tag = String(req.body.machine_tag || "");
     const allowed = await allowedUnitsForUser(req.user);
     if (!allowed.includes(unit)) return res.status(403).json({ error: "Localisation non autorisée" });
-    const machines = await supabaseRequest("machines", { query: `?select=tag,designation,unite,groupe&tag=eq.${encodeURIComponent(tag)}&actif=eq.1&limit=1` });
+    const machines = await supabaseRequest("machines", { query: `?select=tag,designation,unite&tag=eq.${encodeURIComponent(tag)}&actif=eq.1&limit=1` });
     const machine = machines[0];
     if (!machine || machine.unite !== unit) return res.status(400).json({ error: "Machine et localisation incohérentes" });
     const date = String(req.body.date_prevue || "");
@@ -1118,7 +1118,7 @@ app.post("/api/pm", requireAuth, async (req, res) => {
     const months = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
     const payload = {
       uuid: crypto.randomUUID(), machine_tag: tag, machine_designation: machine.designation || "",
-      unite: unit, groupe: req.body.groupe || machine.groupe || "", frequence: String(req.body.frequence),
+      unite: unit, frequence: String(req.body.frequence),
       tolerance_jours: Number(req.body.tolerance_jours || 7), date_prevue: date,
       mois: months[Number(match[2])-1] || "", annee: Number(match[1]),
       statut: "Planifiée", responsable: [req.user.nom, req.user.prenom].filter(Boolean).join(" ").trim(),
