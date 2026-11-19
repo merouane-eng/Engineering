@@ -75,8 +75,10 @@ function fixtures(){
 }
 test("Conformité desktop : les 8 listes et les références SG disponibles",()=>{
  const names=REFERENCE_TABS.map(x=>x[0]);
- for(const t of ["service","fonction","zone","unite","groupe","frequence_pm","statut_pm","statut_panne",
+ for(const t of ["service","fonction","zone","unite","frequence_pm","statut_pm","statut_panne",
    "area_SG01","area_SG02","equipement_SG01","equipement_SG02"])assert.ok(names.includes(t),t);
+ assert.ok(!names.includes("groupe"));
+ assert.equal(REFERENCE_TABS.find(x=>x[0]==="unite")[1],"Localisations");
 });
 test("Accès : aucune lecture/écriture sans compte admin",async()=>{
  const fx=fixtures();
