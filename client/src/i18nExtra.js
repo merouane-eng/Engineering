@@ -573,4 +573,6 @@ export const EXTRA_EN = {
   "Les anciennes PM non attribuées peuvent être consultées par les responsables, sans possibilité de réalisation avant affectation.": "Managers can view legacy unassigned PM, but cannot complete them until they are assigned.",
   "Département :": "Department:",
   "Service non attribué : contactez un administrateur.": "Unassigned department: contact an administrator.",
+  "Les anciennes PM sans service attribué sont consultables en lecture seule par les techniciens et responsables autorisés. Un administrateur doit attribuer leur service avant réalisation.": "Legacy PM without an assigned department can be viewed in read-only mode by authorized technicians and team leads. An administrator must assign the department before completion.",
+  "Chargement des PM impossible :": "Unable to load PM:",
 };
