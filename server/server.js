@@ -1641,7 +1641,10 @@ app.post("/api/tables/:table", requireAuth, async (req, res) => {
     }catch(e){return res.status(400).json({error:"Machine : "+e.message});}
   }
   if (table === "sop") {
+    if(!isLead(req.user))return res.status(403).json({error:"Réservé aux responsables."});
     try {
+      const allowed=await allowedUnitsForUser(req.user);
+      if(req.body.unite&&!allowed.includes(req.body.unite))return res.status(403).json({error:"Localisation non autorisée."});
       const payload = {
         uuid: crypto.randomUUID(), code: String(req.body.code || "").trim(),
         titre: String(req.body.titre || "").trim(), version: req.body.version || null,
@@ -1692,7 +1695,13 @@ app.put("/api/tables/:table/:id", requireAuth, async (req, res) => {
     }catch(e){return res.status(400).json({error:"Modification machine : "+e.message});}
   }
   if (table === "sop") {
+    if(!isLead(req.user))return res.status(403).json({error:"Réservé aux responsables."});
     try {
+      const existing=await supabaseRequest("sop",{query:"?select=unite&id=eq."+encodeURIComponent(req.params.id)+"&limit=1"});
+      if(!existing[0])return res.status(404).json({error:"SOP introuvable."});
+      const units=await allowedUnitsForUser(req.user);
+      if((existing[0].unite&&!units.includes(existing[0].unite))||
+         (req.body.unite&&!units.includes(req.body.unite)))return res.status(403).json({error:"SOP hors localisation."});
       const allowed = ["code","titre","version","machine","unite","date_application","date_revision","validateur","chemin_fichier","commentaire","actif"];
       const payload = Object.fromEntries(Object.entries(req.body).filter(([key])=>allowed.includes(key)));
       payload.date_modification = localTimestamp();
@@ -1724,6 +1733,7 @@ app.delete("/api/tables/:table/:id", requireAuth, async (req, res) => {
     }catch(e){return res.status(502).json({error:e.message});}
   }
   if (req.params.table !== "sop") return res.status(400).json({ error: "Suppression non prise en charge pour cette table" });
+  if(!isAdmin(req.user))return res.status(403).json({error:"Suppression réservée aux administrateurs."});
   try {
     await supabaseRequest("sop", { method: "DELETE", query: `?id=eq.${encodeURIComponent(req.params.id)}` });
     return res.json({ ok: true });
