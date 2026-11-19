@@ -12,6 +12,7 @@ import Effectif from "./EffectifRH.jsx";
 import StatsMaster from "./StatsMaster.jsx";
 import MachineForm from "./MachineForm.jsx";
 import {SITES, localisationSite, localisationLabel, localisationName, localisationsForSite} from "./locationModel.js";
+import {isAdmin,isLead,canManageMachines,canPlanPM,permittedModule} from "./accessPolicy.js";
 import DesktopSettings from "./DesktopSettings.jsx";
 import AdminExcelBar from "./AdminExcelBar.jsx";
 import { useLanguage, LanguageSwitch } from "./i18n.jsx";
@@ -145,9 +146,9 @@ function Dashboard({ user, onNavigate }) {
   useEffect(() => { load(); }, []);
   const dateLabel = new Intl.DateTimeFormat(languageForUI(),{weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date());
   const formatDate = value => { if(!value) return "—"; const d=new Date(value); return Number.isNaN(d.getTime())?value:new Intl.DateTimeFormat(languageForUI(),{day:"2-digit",month:"short"}).format(d); };
-  const cards = [["Machines en service",data?.machines,Wrench,"blue","Parc autorisé"],["Techniciens actifs",data?.techniciens,Users,"violet","Effectif disponible"],["Pannes ouvertes",data?.pannesOuvertes,CircleAlert,"orange","À traiter"],["Pannes clôturées",data?.pannesFermees,CheckCircle2,"green","Ce mois-ci"],["PM à réaliser",data?.pmProgrammee,CalendarClock,"orange","En retard ou ce mois"],["PM réalisées",data?.pmRealisees,ClipboardCheck,"green","Ce mois-ci"]];
+  const cards = [["Machines en service",data?.machines,Wrench,"blue","Parc autorisé"],...(isLead(user)?[["Techniciens actifs",data?.techniciens,Users,"violet","Effectif disponible"]]:[]),["Pannes ouvertes",data?.pannesOuvertes,CircleAlert,"orange","À traiter"],["Pannes clôturées",data?.pannesFermees,CheckCircle2,"green","Ce mois-ci"],["PM à réaliser",data?.pmProgrammee,CalendarClock,"orange","En retard ou ce mois"],["PM réalisées",data?.pmRealisees,ClipboardCheck,"green","Ce mois-ci"]];
   return <div className="dashboard">
-    <section className="dashboardHero"><div className="dashboardHeroText"><span className="eyebrow">CENTRE DE PILOTAGE · ENGINEERING</span><h1>Bonjour {user?.prenom || user?.nom || "Utilisateur"} <span>👋</span></h1><p>Voici la situation de votre maintenance aujourd'hui.</p><div className="dashboardHeroMeta"><CalendarDays/><span>{dateLabel}</span></div></div>
+    <section className="dashboardHero"><div className="dashboardHeroText"><span className="eyebrow">CENTRE DE PILOTAGE · ENGINEERING</span><h1>Bonjour {user?.prenom || user?.nom || "Utilisateur"} <span>👋</span></h1><p>Voici la situation de votre maintenance aujourd'hui.</p>{!isAdmin(user)&&<p className="dashboardScope">Département : <strong>{data?.scope?.department||user.service||"Non affecté"}</strong> · Localisations : <strong>{data?.scope?.locations?.map(loc=>localisationName(loc,{withSite:true})).join(", ")||"Aucune localisation affectée"}</strong></p>}<div className="dashboardHeroMeta"><CalendarDays/><span>{dateLabel}</span></div></div>
       <div className="dashboardHeroAside"><div className={cloud?.linked?"cloudState connected":"cloudState"}><span className="cloudDot"/>{cloud?.linked?"Base de données connectée":"Connexion à vérifier"}</div><div className="heroIllustration"><div className="heroRing heroRingOne"/><div className="heroRing heroRingTwo"/><div className="heroIcon"><Gauge/></div><span className="heroSpark heroSparkOne">✦</span><span className="heroSpark heroSparkTwo">＋</span></div></div>
     </section>
     <div className="dashboardSectionHead"><div><span className="eyebrow">VUE GÉNÉRALE</span><h2>Indicateurs clés</h2></div><button className="dashboardRefresh" onClick={load} disabled={loading}><Activity/> Actualiser</button></div>
@@ -163,7 +164,7 @@ function Dashboard({ user, onNavigate }) {
       <button onClick={()=>onNavigate("saisie")}><span className="quickIcon orange"><PlusCircle/></span><span><strong>Déclarer une panne</strong><small>Créer un nouvel ordre de travail</small></span><ArrowUpRight/></button>
       <button onClick={()=>onNavigate("machines")}><span className="quickIcon blue"><Wrench/></span><span><strong>Consulter les machines</strong><small>Voir le parc et ses équipements</small></span><ArrowUpRight/></button>
       <button onClick={()=>onNavigate("pm")}><span className="quickIcon green"><CalendarClock/></span><span><strong>Planifier une PM</strong><small>Organiser la maintenance préventive</small></span><ArrowUpRight/></button>
-      <button onClick={()=>onNavigate("stats")}><span className="quickIcon violet"><Activity/></span><span><strong>Voir les statistiques</strong><small>Analyser les indicateurs maintenance</small></span><ArrowUpRight/></button>
+      {isLead(user)&&<button onClick={()=>onNavigate("stats")}><span className="quickIcon violet"><Activity/></span><span><strong>Voir les statistiques</strong><small>Analyser les indicateurs maintenance</small></span><ArrowUpRight/></button>}
     </div></section>
     <div className="dashboardFooter"><span>ENGINEERING · Gestion de maintenance industrielle</span><span><Clock3/> Données actualisées à la demande</span></div>
   </div>;
@@ -251,7 +252,7 @@ function MachinePage({ user }) {
   const [rows,setRows]=useState([]),[query,setQuery]=useState(""),[site,setSite]=useState(""),[unit,setUnit]=useState(""),[area,setArea]=useState(""),[editing,setEditing]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState("");
   const [referenceOptions,setReferenceOptions]=useState({});
   const load=async()=>{setLoading(true);setError("");try{const data=await api("/api/modules/machines");setRows(Array.isArray(data)?data:[]);}catch(e){setError(e.message||"Chargement impossible");}finally{setLoading(false);}};
-  useEffect(()=>{load();api("/api/references/active").then(refs=>{const get=type=>refs.filter(r=>r.type_liste===type).map(r=>r.valeur);setReferenceOptions({unite:get("unite"),zone:get("zone")});}).catch(()=>{});},[]);
+  useEffect(()=>{load();api("/api/references/active").then(refs=>{const get=type=>refs.filter(r=>r.type_liste===type).map(r=>r.valeur);setReferenceOptions({unite:get("unite"),zone:get("zone"),service:get("service")});}).catch(()=>{});},[]);
   const unique=values=>[...new Set(values.map(v=>String(v||"").trim()).filter(Boolean))].sort((x,y)=>x.localeCompare(y,"fr"));
   const sites=unique(rows.map(r=>r.site||localisationSite(r.unite)));
   const units=localisationsForSite(unique(rows.map(r=>r.unite)),site);
@@ -281,7 +282,7 @@ function MachinePage({ user }) {
       <article className="mm-kpi"><div className="mm-kpiTop"><span className="mm-kpiIcon"><Layers/></span><span className="eyebrow">ORGANISATION</span></div><strong>{loading?"—":unitCount}</strong><span>Localisations couvertes</span></article>
       <article className="mm-kpi"><div className="mm-kpiTop"><span className="mm-kpiIcon"><MapPin/></span><span className="eyebrow">LOCALISATION</span></div><strong>{loading?"—":areaCount}</strong><span>Areas / zones</span></article>
     </section>
-    <div className="mm-toolbar"><div className="mm-sectionTitle"><span className="eyebrow">EXPLORATEUR DU PARC</span><h2>Équipements</h2></div>{user.role==="admin"&&<button className="primary" onClick={()=>setEditing({site:"Site 01",unite:""})}><Plus/> Ajouter une machine</button>}</div>
+    <div className="mm-toolbar"><div className="mm-sectionTitle"><span className="eyebrow">EXPLORATEUR DU PARC</span><h2>Équipements</h2></div>{canManageMachines(user)&&<button className="primary" onClick={()=>setEditing({site:"Site 01",unite:"",departement:isAdmin(user)?"":(user.service||"")})}><Plus/> Ajouter une machine</button>}</div>
     <section className="mm-filters">
       <div className="mm-field mm-search"><label>RECHERCHE RAPIDE</label><input placeholder="Tag, désignation, marque…" value={query} onChange={e=>setQuery(e.target.value)}/></div>
       <div className="mm-field"><label>SITE</label><select value={site} onChange={e=>{setSite(e.target.value);setUnit("");setArea("");}}><option value="">Tous les sites</option>{SITES.map(v=><option key={v} value={v}>{v}</option>)}</select></div>
@@ -294,15 +295,15 @@ function MachinePage({ user }) {
       <div className="mm-listHead"><h3>Liste des équipements</h3><span>{filtered.length} / {rows.length} machine(s)</span></div>
       {loading?<div className="mm-empty">Chargement du parc machines…</div>:filtered.length?<div className="mm-grid">{filtered.map(row=><article className="mm-machine" key={row.id||row.tag}>
         <div className="mm-machineTop"><span className="mm-tag">{row.tag||"SANS TAG"}</span><span className={active(row.actif)?"mm-status":"mm-status off"}><i/>{active(row.actif)?"En service":"Inactive"}</span></div>
-        <h4>{row.designation||"Machine sans désignation"}</h4><div className="mm-machineMeta"><span><MapPin/>{row.site||localisationSite(row.unite)}</span><span><Layers/>{localisationLabel(row.unite)||"Localisation non définie"}</span><span><MapPin/>{row.zone||"Zone non définie"}</span></div>
+        <h4>{row.designation||"Machine sans désignation"}</h4><div className="mm-machineMeta"><span><MapPin/>{row.site||localisationSite(row.unite)}</span><span><Layers/>{localisationLabel(row.unite)||"Localisation non définie"}</span><span><MapPin/>{row.zone||"Zone non définie"}</span><span><Users/>{row.departement||"Équipement partagé"}</span></div>
         {(row.marque||row.modele)&&<div className="mm-machineMeta"><span>{[row.marque,row.modele].filter(Boolean).join(" · ")}</span></div>}
-        {user.role==="admin"&&<div className="mm-machineFoot"><button onClick={()=>setEditing(row)}>Modifier</button><button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button></div>}
+        {canManageMachines(user)&&<div className="mm-machineFoot"><button onClick={()=>setEditing(row)}>Modifier</button>{isAdmin(user)&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</div>}
       </article>)}</div>:<div className="mm-empty"><Wrench/>Aucune machine ne correspond à ces filtres.</div>}
     </article><aside className="mm-sidePanel"><h3>Répartition par localisation</h3><p>Nombre d'équipements par localisation et site</p>
       {byUnit.length?byUnit.map(item=><div className="mm-unitRow" key={item.name}><div className="mm-unitLabel"><span>{item.name}</span><strong>{item.count}</strong></div><div className="mm-track"><i style={{width:(item.count/maxUnit*100)+"%"}}/></div></div>):<div className="mm-empty">Aucune donnée</div>}
       <div className="mm-sideStats"><div><strong>{siteCount}</strong><span>Sites</span></div><div><strong>{inactiveCount}</strong><span>Inactives</span></div></div>
     </aside></section>
-    {editing&&<MachineForm values={editing} locations={[...(referenceOptions.unite||[]),...rows.map(r=>r.unite)]} zones={[...(referenceOptions.zone||[]),...rows.map(r=>r.zone).filter(Boolean)]} onClose={()=>setEditing(null)} onSave={save}/>}
+    {editing&&<MachineForm user={user} values={editing} locations={[...(referenceOptions.unite||[]),...rows.map(r=>r.unite)]} zones={[...(referenceOptions.zone||[]),...rows.map(r=>r.zone).filter(Boolean)]} departments={referenceOptions.service||[]} onClose={()=>setEditing(null)} onSave={save}/>}
   </div>;
 }
 
@@ -342,8 +343,8 @@ function DataPage({ module, user }) {
       <div className="bl-count"><span><strong>{filtered.length}</strong> panne(s) affichée(s) sur {rows.length}</span><span>Filtres cumulables · Données inchangées</span></div>
     </>}
     {module!=="liste"&&<section className="toolbar"><div className="search"><Search/><input placeholder="Rechercher..." value={query} onChange={e=>setQuery(e.target.value)}/></div><button className="primary" onClick={()=>setEditing({})}><Plus/> Ajouter</button></section>}
-    <div className="tableWrap"><table><thead><tr>{defs.map(([key,label])=><th key={key}>{label}</th>)}<th/></tr></thead><tbody>{filtered.map(row=><tr key={row.id}>{defs.map(([key])=><td key={key} className={key==="technicien"?"bl-technician-cell":""}>{key==="actif"?(row[key]?"Oui":"Non"):key==="unite"?localisationName(row.unite,{withSite:true}):key==="technicien"?<span className="bl-tech"><i>{String(row[key]||"—").slice(0,1).toUpperCase()}</i>{row[key]||"—"}</span>:key==="wo"?<span className="bl-wo">{row[key]??"—"}</span>:row[key]??"—"}</td>)}<td className="actions"><button onClick={()=>setEditing(row)}>Modifier</button>{module!=="liste"&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</td></tr>)}</tbody></table>{!filtered.length&&<div className="empty">Aucun résultat</div>}</div>
-    {editing&&<Editor fields={defs} values={editing} onClose={()=>setEditing(null)} onSave={save}/>}
+    <div className="tableWrap"><table><thead><tr>{defs.map(([key,label])=><th key={key}>{label}</th>)}<th/></tr></thead><tbody>{filtered.map(row=><tr key={row.id}>{defs.map(([key])=><td key={key} className={key==="technicien"?"bl-technician-cell":""}>{key==="actif"?(row[key]?"Oui":"Non"):key==="unite"?localisationName(row.unite,{withSite:true}):key==="technicien"?<span className="bl-tech"><i>{String(row[key]||"—").slice(0,1).toUpperCase()}</i>{row[key]||"—"}</span>:key==="wo"?<span className="bl-wo">{row[key]??"—"}</span>:row[key]??"—"}</td>)}<td className="actions">{(module!=="liste"||row.peut_modifier!==false)&&<button onClick={()=>setEditing(row)}>Modifier</button>}{module!=="liste"&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</td></tr>)}</tbody></table>{!filtered.length&&<div className="empty">Aucun résultat</div>}</div>
+    {editing&&<Editor fields={module==="liste"&&!isLead(user)?defs.filter(([key])=>["probleme","area","statut","commentaire","pieces_consommees"].includes(key)):defs} values={editing} onClose={()=>setEditing(null)} onSave={save}/>}
   </div>;
 }
 function FailureEntry({ user }) {
@@ -468,7 +469,7 @@ function FailureEntry({ user }) {
         <label>Statut<select value={draft.statut} onChange={e=>setDraft({...draft,statut:e.target.value})}>{[...new Set([...(context.statuses||["Open","Close"]),draft.statut].filter(Boolean))].map(s=><option key={s} value={s}>{s}</option>)}</select></label>
       </div><div className="fm-meta"><span>Durée calculée : <b>{downtime!==""?downtime+" min":"À déterminer"}</b></span><span>État : <b>{draft.statut==="Close"?"Clôturé":"Ouvert"}</b></span></div></section>
       <section className="fm-card"><div className="fm-head"><span className="fm-icon"><Wrench/></span><div><h3>Pièces de rechange</h3><p>Sélectionnez les pièces consommées ou ajoutez une nouvelle référence.</p></div></div>
-        <div className="failurePartsToolbar"><p>Les pièces ajoutées seront associées à cet ordre de travail.</p><button className="secondary" type="button" onClick={()=>setPieceFormOpen(true)}><Plus/> Nouvelle pièce au catalogue</button></div>
+        <div className="failurePartsToolbar"><p>Les pièces ajoutées seront associées à cet ordre de travail.</p>{isLead(user)&&<button className="secondary" type="button" onClick={()=>setPieceFormOpen(true)}><Plus/> Nouvelle pièce au catalogue</button>}</div>
         <div className="piecePicker">
           <label>Catalogue de pièces<select value={pieceDraft.selected} onChange={e=>selectPiece(e.target.value)}><option value="">Saisir ou choisir une pièce...</option>{pieceContext.catalog.map(piece=><option key={piece.id} value={piece.id}>{piece.reference?piece.reference+" — ":""}{piece.nom}</option>)}</select></label>
           <label>Nom de la pièce<input value={pieceDraft.nom_piece} onChange={e=>setPieceDraft({...pieceDraft,nom_piece:e.target.value})} placeholder="Désignation"/></label>
@@ -476,7 +477,7 @@ function FailureEntry({ user }) {
           <label>Quantité<input type="number" min="1" value={pieceDraft.quantite} onChange={e=>setPieceDraft({...pieceDraft,quantite:e.target.value})}/></label>
           <button className="secondary" type="button" onClick={addPiece}><Plus/> Ajouter</button>
         </div>
-        {draft.machine&&<div className="machineParts"><h4>Référentiel de la machine — {draft.machine}</h4>{pieceContext.machineParts.length>0?<div className="usedParts">{pieceContext.machineParts.map(piece=><div key={piece.id}><strong>{piece.nom}</strong><span>{piece.reference||"Sans référence"}</span><button type="button" className="secondary" onClick={()=>setPieceDraft({selected:String(piece.id),nom_piece:piece.nom,reference_piece:piece.reference||"",quantite:1})}>Utiliser</button></div>)}</div>:<p className="hint">Aucune pièce référentielle associée à cette machine pour le moment.</p>}{pieceDraft.selected&&!pieceContext.machineParts.some(piece=>String(piece.id)===String(pieceDraft.selected))&&<button type="button" className="secondary" onClick={async()=>{try{await api("/api/pieces/"+pieceDraft.selected+"/machines",{method:"POST",body:JSON.stringify({machine:draft.machine})});const refreshed=await api("/api/pieces/context?machine="+encodeURIComponent(draft.machine));setPieceContext(refreshed);}catch(err){setError(err.message);}}}>Associer cette pièce au référentiel de la machine</button>}</div>}
+        {draft.machine&&<div className="machineParts"><h4>Référentiel de la machine — {draft.machine}</h4>{pieceContext.machineParts.length>0?<div className="usedParts">{pieceContext.machineParts.map(piece=><div key={piece.id}><strong>{piece.nom}</strong><span>{piece.reference||"Sans référence"}</span><button type="button" className="secondary" onClick={()=>setPieceDraft({selected:String(piece.id),nom_piece:piece.nom,reference_piece:piece.reference||"",quantite:1})}>Utiliser</button></div>)}</div>:<p className="hint">Aucune pièce référentielle associée à cette machine pour le moment.</p>}{isLead(user)&&pieceDraft.selected&&!pieceContext.machineParts.some(piece=>String(piece.id)===String(pieceDraft.selected))&&<button type="button" className="secondary" onClick={async()=>{try{await api("/api/pieces/"+pieceDraft.selected+"/machines",{method:"POST",body:JSON.stringify({machine:draft.machine})});const refreshed=await api("/api/pieces/context?machine="+encodeURIComponent(draft.machine));setPieceContext(refreshed);}catch(err){setError(err.message);}}}>Associer cette pièce au référentiel de la machine</button>}</div>}
         {pieces.length>0?<div className="usedParts">{pieces.map((piece,index)=><div key={piece.reference_piece+"-"+index}><strong>{piece.nom_piece}</strong><span>{piece.reference_piece||"Sans référence"} · Qté {piece.quantite}</span><button type="button" className="dangerText" onClick={()=>setPieces(current=>current.filter((_,itemIndex)=>itemIndex!==index))}>Retirer</button></div>)}</div>:<div className="empty">Aucune pièce ajoutée à cet ordre de travail.</div>}
       </section>
       <section className="fm-card"><div className="fm-head"><span className="fm-icon"><ClipboardCheck/></span><div><h3>Historique des pièces utilisées</h3><p>Traçabilité des consommations précédentes pour cette machine.</p></div></div>
@@ -658,7 +659,7 @@ function PreventiveMaintenance({ user }) {
   const plannedCount = filtered.length - realizedCount;
   const completion = filtered.length ? Math.round(realizedCount / filtered.length * 100) : 0;
   const resetFilters = () => {setQuery("");setFilterUnit("");setFilterStatus("");setFilterMonth("");};
-  const canPlan = user.role === "admin" || user.role === "superviseur";
+  const canPlan = canPlanPM(user);
   const servicesPM = [...new Set([...(context.services||[]), "Électricité"].filter(Boolean))].sort((a,b)=>a.localeCompare(b,"fr"));
   const assignService = async row => {
     setError("");
@@ -891,9 +892,10 @@ function App() {
   const login = value => { localStorage.setItem("engineering_user", JSON.stringify(value)); setUser(value); };
   const logout = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch {} localStorage.removeItem("engineering_token"); localStorage.removeItem("engineering_user"); setUser(null); };
   if (!user) return <Login onLogin={login} language={language} setLanguage={setLanguage} />;
-  const allowed = item => item === "parametres" ? user.role === "admin" : true;
-  const content = module === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : module === "stats" ? <StatsMaster theme={theme} onThemeChange={setTheme} language={language} /> : module === "machines" ? <MachinePage user={user} /> : module === "saisie" ? <FailureEntry user={user} /> : module === "pm" ? <PreventiveMaintenance user={user} /> : module === "operating" ? <OperatingTime user={user} /> : module === "effectif" ? <Effectif user={user} api={api} /> :
-    module === "parametres" ? <AccessSettings user={user} /> : <DataPage key={module} module={module} user={user} />;
+  const allowed = item => permittedModule(user,item);
+  const visibleModule=allowed(module)?module:"accueil";
+  const content = visibleModule === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : visibleModule === "stats" ? <StatsMaster theme={theme} onThemeChange={setTheme} language={language} /> : visibleModule === "machines" ? <MachinePage user={user} /> : visibleModule === "saisie" ? <FailureEntry user={user} /> : visibleModule === "pm" ? <PreventiveMaintenance user={user} /> : visibleModule === "operating" ? <OperatingTime user={user} /> : visibleModule === "effectif" ? <Effectif user={user} api={api} /> :
+    visibleModule === "parametres" ? <AccessSettings user={user} /> : <DataPage key={visibleModule} module={visibleModule} user={user} />;
   return <div className="appShell">
     <aside id="engineering-sidebar" className={menuOpen ? "sidebar open" : "sidebar"}>
       <div className="brand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>GMAO · Maintenance</small></span></div>
@@ -902,7 +904,7 @@ function App() {
       <div className="userBlock"><div className="avatar">{user.nom?.[0]}{user.prenom?.[0]}</div><div><strong>{user.nom} {user.prenom || ""}</strong><small>{user.role}</small></div><button title="Déconnexion" onClick={logout}><LogOut /></button></div>
     </aside>
     {menuOpen && <button className="backdrop" aria-label="Fermer" onClick={() => setMenuOpen(false)} />}
-    <main className="main"><header className="mobileTopbar"><button type="button" className="mobileMenu" aria-label="Ouvrir le menu" aria-expanded={menuOpen} aria-controls="engineering-sidebar" onClick={() => setMenuOpen(true)}><Menu /></button><div className="mobileTopbarBrand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>{modules.find(item => item[0] === module)?.[1] || "GMAO"}</small></span></div><LanguageSwitch language={language} setLanguage={setLanguage} className="appLanguage" /></header><div className="mainContent">{user.role === "admin" && <AdminExcelBar module={module} onSuccess={()=>setExcelRefreshKey(x=>x+1)} />}<div key={excelRefreshKey}>{content}</div></div></main>
+    <main className="main"><header className="mobileTopbar"><button type="button" className="mobileMenu" aria-label="Ouvrir le menu" aria-expanded={menuOpen} aria-controls="engineering-sidebar" onClick={() => setMenuOpen(true)}><Menu /></button><div className="mobileTopbarBrand"><img src="/engineering-logo.svg" alt="" /><span><strong>Engineering</strong><small>{modules.find(item => item[0] === visibleModule)?.[1] || "GMAO"}</small></span></div><LanguageSwitch language={language} setLanguage={setLanguage} className="appLanguage" /></header><div className="mainContent">{user.role === "admin" && <AdminExcelBar module={module} onSuccess={()=>setExcelRefreshKey(x=>x+1)} />}<div key={excelRefreshKey}>{content}</div></div></main>
   </div>;
 }
 
