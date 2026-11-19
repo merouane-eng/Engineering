@@ -1,9 +1,10 @@
-import {isAdmin,isLead,pmInDepartment,machineInDepartment} from "./accessPolicy.js";
+import {isAdmin,pmInDepartment,machineInDepartment} from "./accessPolicy.js";
 
-// Les PM historiques sans service ne sont pas automatiquement réaffectées.
-// Un responsable peut les consulter uniquement dans ses localisations autorisées
-// et sur une machine partagée ou de son département. Elles restent non réalisables
-// tant que l'administrateur ne les a pas attribuées explicitement.
+// Les PM historiques sans service ne sont jamais automatiquement réaffectées.
+// Les techniciens comme les responsables peuvent les CONSULTER uniquement dans
+// leurs localisations autorisées, si la machine est partagée ou rattachée à leur
+// département. La réalisation reste interdite jusqu'à attribution explicite
+// du service par un administrateur (vérifiée aussi par l'API de réalisation).
 export function pmVisibility(user,pm,allowedLocations,machine){
  const units=allowedLocations instanceof Set?allowedLocations:new Set(allowedLocations||[]);
  if(!units.has(pm.unite))return {visible:false,readOnly:true,reason:"location"};
@@ -12,7 +13,9 @@ export function pmVisibility(user,pm,allowedLocations,machine){
   const allowed=pmInDepartment(user,pm);
   return {visible:allowed,readOnly:!allowed,reason:allowed?"department":"other-department"};
  }
- if(!isLead(user))return {visible:false,readOnly:true,reason:"unassigned"};
+ // Ne jamais confondre absence d'attribution et accès libre aux PM.
+ // La machine doit être présente, dans la même localisation, et visible selon
+ // le département du compte connecté. Aucun droit d'écriture n'est ajouté ici.
  if(!machine||machine.unite!==pm.unite||!machineInDepartment(user,machine))
   return {visible:false,readOnly:true,reason:"machine-scope"};
  return {visible:true,readOnly:true,reason:"legacy-unassigned"};
