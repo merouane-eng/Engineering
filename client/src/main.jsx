@@ -642,7 +642,9 @@ function PreventiveMaintenance({ user }) {
   const [error, setError] = useState("");
   const [realizationDraft, setRealizationDraft] = useState({ date_debut: "", date_fin: "", commentaire: "", technicien: "" });
 
-  const load = () => api("/api/modules/pm").then(setRows).catch(() => setRows([]));
+  const load = () => api("/api/modules/pm")
+    .then(data => { setRows(Array.isArray(data)?data:[]); setError(""); })
+    .catch(err => { setError("Chargement des PM impossible : "+(err?.message||"Erreur serveur")); });
   useEffect(() => {
     load();
     api("/api/pm/context").then(data => {
@@ -713,7 +715,7 @@ function PreventiveMaintenance({ user }) {
 
   return <div className="breakdownListMaster operationsMaster">
     <PageTitle title="Maintenance préventive" subtitle={filtered.length + " / " + rows.length + " PM affichée(s)"} />
-    {!isAdmin(user)&&<div className="pm-electricScope"><Wrench size={16}/> Département : <strong>{user.service||"Non affecté"}</strong> — les PM attribuées sont limitées à votre département. Les anciennes PM non attribuées peuvent être consultées par les responsables, sans possibilité de réalisation avant affectation.</div>}
+    {!isAdmin(user)&&<div className="pm-electricScope"><Wrench size={16}/> Département : <strong>{user.service||"Non affecté"}</strong> — les PM attribuées sont limitées à votre département. Les anciennes PM sans service attribué sont consultables en lecture seule par les techniciens et responsables autorisés. Un administrateur doit attribuer leur service avant réalisation.</div>}
     {error && <div className="formError">{error}</div>}
     <section className="bl-kpis">
       <article className="bl-kpi"><div className="bl-kpiTop"><span>TOTAL PM</span><span className="bl-kpiIcon bl-blue"><CalendarClock /></span></div><strong>{filtered.length}</strong><small>Maintenances filtrées</small></article>
