@@ -749,7 +749,7 @@ function PreventiveMaintenance({ user }) {
     </p>}
     {isAdmin(user)&&<details className="pm-legacy-tools">
       <summary><Wrench size={16}/> Attribution des PM historiques sans département</summary>
-      <p>Les anciennes PM sans service intervenant sont invisibles aux utilisateurs non administrateurs. Choisissez la localisation et le département réel, puis consultez l'aperçu avant de confirmer. Les dates et résultats des PM restent inchangés. Si plusieurs départements interviennent dans la même localisation, sélectionnez une machine à la fois.</p>
+      <p>Les anciennes PM dépourvues de département sont invisibles aux utilisateurs non administrateurs. Choisissez la localisation et le département réel, puis consultez l'aperçu avant de confirmer. Les dates et résultats des PM restent inchangés. Si plusieurs départements interviennent dans la même localisation, sélectionnez une machine à la fois.</p>
       <div className="pm-legacy-fields">
         <label>Localisation
           <select value={legacyUnit} onChange={e=>{setLegacyUnit(e.target.value);setLegacyMachine("");setLegacyPreview(null);setLegacyNotice("");}}>
