@@ -90,8 +90,8 @@ for(const size of sizes){
       if(module==="parametres"){
         await expect(page.getByText("Paramètres & accès")).toBeVisible();
         await expect(page.getByText("Paramètres de l'application")).toBeVisible();
-        await expect(page.getByRole("tab")).toHaveCount(12);
-        await page.getByRole("tab",{name:/Groupes/}).click();
+        await expect(page.getByRole("tab")).toHaveCount(11);
+        await page.getByRole("tab",{name:/Localisations/}).click();
         await expect(page.locator(".ds-actionbar")).toBeVisible();
         await page.locator(".ds-actionbar .ds-primary").click();
         await expect(page.locator(".ds-modal")).toBeVisible();
