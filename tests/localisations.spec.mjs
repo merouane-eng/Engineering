@@ -60,7 +60,7 @@ for(const size of [{width:390,height:844},{width:1366,height:768}]){
   await expect(page.getByRole("heading",{name:"Parc machines"})).toBeVisible();
   await expect(page.getByText("GROUPE",{exact:true})).toHaveCount(0);
   await expect(page.getByText("Groupe",{exact:true})).toHaveCount(0);
-  await expect(page.getByText("QC",{exact:true}).first()).toBeVisible();
+  await expect(page.locator(".mm-machineMeta span").filter({hasText:"QC"}).first()).toBeVisible();
   await page.getByRole("button",{name:/Ajouter une machine/}).click();
   await expect(page.locator(".machineForm")).toBeVisible();
   await expect(page.locator(".machineForm").getByText("Localisation *")).toBeVisible();
