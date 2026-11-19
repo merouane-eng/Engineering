@@ -97,7 +97,12 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
     const parent=escapeCsv(req.body?.parent)||null;
     if(!VALID.has(type))throw new Error("Type de liste non autorisé.");
     if(!valeur||valeur.length>120)throw new Error("Valeur obligatoire (120 caractères maximum).");
-    if(type==="unite")return {type,valeur:localisationCode(valeur,String(req.body?.site||"").trim()),parent:null};
+    if(type==="unite"){
+      const site=String(req.body?.site||"").trim();
+      const code=localisationCode(valeur,site);
+      if(localisationSite(code)!==site)throw new Error("Localisation déjà réservée à un autre site.");
+      return {type,valeur:code,parent:null};
+    }
     if(parent&&parent.length>120)throw new Error("Valeur associée trop longue.");
     return {type,valeur,parent};
   }
