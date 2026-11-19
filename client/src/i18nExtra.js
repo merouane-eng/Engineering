@@ -582,4 +582,8 @@ export const EXTRA_EN = {
   "Le nombre de PM à attribuer a changé. Refaire l'aperçu.": "The unassigned PM count has changed. Refresh the preview.",
   "PM attribuées au département": "PM assigned to department",
   "PM historiques de": "historical PM from",
+  "Toutes les machines de la localisation": "All machines in the location",
+  "Si plusieurs départements interviennent dans la même localisation, sélectionnez une machine à la fois.": "If several departments work in the same location, choose one machine at a time.",
+  "Machines concernées :": "Affected machines:",
+  "(sans machine)": "(no machine)",
 };
