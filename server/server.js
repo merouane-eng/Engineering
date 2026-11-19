@@ -678,11 +678,40 @@ async function visibleEmployees(user){
   return rows;
 }
 
+// Historical WOs have no creator id. Names are accepted only when unambiguous
+// across the entire staff directory, including reverse first/last display order.
+async function legacyPanneOwnerNames(user){
+  if(isAdmin(user)||isLead(user))return new Set();
+  const employees=await supabaseRequest("effectif",{query:"?select=id,nom,prenom,service"});
+  const owners=new Map();
+  for(const employee of employees){
+    for(const candidate of [
+      nameAccess([employee.nom,employee.prenom].join(" ")),
+      nameAccess([employee.prenom,employee.nom].join(" "))
+    ]){
+      if(!candidate)continue;
+      if(!owners.has(candidate))owners.set(candidate,new Set());
+      owners.get(candidate).add(String(employee.id));
+    }
+  }
+  const current=String(user.supabase_id||user.id||"");
+  return new Set([...owners.entries()].filter(([name,ids])=>ids.size===1&&ids.has(current)).map(([name])=>name));
+}
+async function panneCanBeEdited(user,panne,legacyNames=null){
+  if(!panneEditable(user,panne))return false;
+  if(isLead(user)||isAdmin(user)||panne.cree_par_effectif_id)return true;
+  const allowed=legacyNames||await legacyPanneOwnerNames(user);
+  return allowed.has(nameAccess(panne.technicien));
+}
+
 async function remoteModuleRows(module,user){
   const units=new Set(await allowedUnitsForUser(user));
   if(module==="liste"||module==="saisie"){
     const rows=await supabaseReadAll("pannes","?select=*&order=id.desc");
-    return rows.filter(row=>units.has(row.unite)&&panneInDepartment(user,row));
+    const visible=rows.filter(row=>units.has(row.unite)&&panneInDepartment(user,row));
+    const legacy=!isLead(user)?await legacyPanneOwnerNames(user):null;
+    return visible.map(row=>({...row,peut_modifier:isLead(user)||isAdmin(user)?true:
+      Boolean(panneEditable(user,row)&&(row.cree_par_effectif_id||legacy.has(nameAccess(row.technicien))))}));
   }
   if(module==="pm"){
     const rows=await supabaseReadAll("pm_programmees","?select=*&order=date_prevue.desc,id.desc");
@@ -1434,9 +1463,9 @@ app.post("/api/pannes", requireAuth, async (req, res) => {
     if (missing.length) return res.status(400).json({ error: `Champs obligatoires manquants : ${missing.join(", ")}` });
     const allowed = await allowedUnitsForUser(req.user);
     if (!allowed.includes(body.unite)) return res.status(403).json({ error: "Localisation non autorisée" });
-    const machineRows = await supabaseRequest("machines", { query: `?select=tag,unite,zone&tag=eq.${encodeURIComponent(body.machine)}&limit=1` });
+    const machineRows = await supabaseRequest("machines", { query: `?select=tag,unite,zone,departement&tag=eq.${encodeURIComponent(body.machine)}&limit=1` });
     const machine = machineRows[0];
-    if (!machine || machine.unite !== body.unite) return res.status(400).json({ error: "Machine et localisation incohérentes" });
+    if (!machine || machine.unite !== body.unite || !machineInDepartment(req.user,machine)) return res.status(403).json({ error: "Machine ou département non autorisé" });
     const duplicate = await supabaseRequest("pannes", { query: `?select=id&wo=eq.${encodeURIComponent(String(body.wo).trim())}&limit=1` });
     if (duplicate.length) return res.status(409).json({ error: "Ce numéro WO existe déjà" });
     const split = value => {
@@ -1454,6 +1483,7 @@ app.post("/api/pannes", requireAuth, async (req, res) => {
       uuid: crypto.randomUUID(), wo: String(body.wo).trim(), date_panne: panneDate.date,
       heure_panne: body.heure_panne || panneDate.time || null,
       date_debut: startDate || null, date_fin: endDate || null, unite: body.unite,
+      cree_par_effectif_id:req.user.supabase_id||null,
       machine: body.machine, probleme: body.probleme, area: String(body.area || machine.zone || "").trim(),
       service: req.user.role === "admin" ? body.service : (req.user.service || ""),
       mois: monthNames[Number(panneDate.date.slice(5,7))-1] || "",
@@ -1509,29 +1539,34 @@ async function tableColumns(table) {
   return new Set(columns.map(column => column.name));
 }
 
-app.put("/api/tables/pannes/:id", requireAuth, async (req, res) => {
-  try {
-    const found = await supabaseRequest("pannes", { query: `?select=*&id=eq.${encodeURIComponent(req.params.id)}&limit=1` });
-    const panne = found[0];
-    if (!panne) return res.status(404).json({ error: "Panne introuvable" });
-    const allowed = await allowedUnitsForUser(req.user);
-    const targetUnit = String(req.body.unite ?? panne.unite);
-    if (!allowed.includes(targetUnit) || !allowed.includes(panne.unite)) return res.status(403).json({ error: "Modification non autorisée pour cette unité" });
-    if (isElectrician(req.user) && !electricPanne(panne,await electricServiceNames())) return res.status(403).json({ error: "Panne réservée à un autre service" });
-    const machineTag = String(req.body.machine ?? panne.machine);
-    const machine = await supabaseRequest("machines", { query: `?select=tag,unite&tag=eq.${encodeURIComponent(machineTag)}&limit=1` });
-    if (!machine[0] || machine[0].unite !== targetUnit) return res.status(400).json({ error: "Machine et localisation incohérentes" });
-    const allowedFields = ["wo","date_panne","heure_panne","date_debut","date_fin","unite","machine","probleme","area","service","mois","technicien","downtime","statut","commentaire","pieces_consommees"];
-    const payload = Object.fromEntries(Object.entries(req.body).filter(([key])=>allowedFields.includes(key)));
-    if (req.user.role !== "admin") {
-      delete payload.service; delete payload.technicien;
-    }
-    payload.date_modification = localTimestamp();
-    const updated = await supabaseRequest("pannes", { method: "PATCH", query: `?id=eq.${encodeURIComponent(req.params.id)}&select=*`, prefer: "return=representation", body: payload });
-    return res.json(updated?.[0] || { ok: true });
-  } catch (error) { return res.status(502).json({ error: `Modification panne Supabase impossible: ${error.message}` }); }
+app.put("/api/tables/pannes/:id",requireAuth,async(req,res)=>{
+  try{
+    const found=await supabaseRequest("pannes",{query:"?select=*&id=eq."+encodeURIComponent(req.params.id)+"&limit=1"});
+    const panne=found[0];
+    if(!panne)return res.status(404).json({error:"Panne introuvable."});
+    const units=await allowedUnitsForUser(req.user);
+    if(!units.includes(panne.unite)||!panneInDepartment(req.user,panne))
+      return res.status(403).json({error:"Panne hors de votre localisation ou département."});
+    if(!await panneCanBeEdited(req.user,panne))
+      return res.status(403).json({error:"Seul l'auteur ou un responsable de ce département peut modifier cette panne."});
+    const newUnit=String(req.body.unite??panne.unite);
+    if(!units.includes(newUnit))return res.status(403).json({error:"Localisation non autorisée."});
+    const newTag=String(req.body.machine??panne.machine);
+    const match=await supabaseRequest("machines",{query:"?select=tag,unite,departement&tag=eq."+encodeURIComponent(newTag)+"&limit=1"});
+    if(!match[0]||match[0].unite!==newUnit||!machineInDepartment(req.user,match[0]))
+      return res.status(403).json({error:"Machine ou département non autorisé."});
+    const fields=isAdmin(req.user)?
+      ["wo","date_panne","heure_panne","date_debut","date_fin","unite","machine","probleme","area","service","mois","technicien","downtime","statut","commentaire","pieces_consommees"]:
+      isLead(req.user)?
+      ["date_panne","heure_panne","date_debut","date_fin","unite","machine","probleme","area","mois","technicien","downtime","statut","commentaire","pieces_consommees"]:
+      ["date_debut","date_fin","probleme","area","downtime","statut","commentaire","pieces_consommees"];
+    const payload=Object.fromEntries(Object.entries(req.body).filter(([k])=>fields.includes(k)));
+    if(!Object.keys(payload).length)return res.status(400).json({error:"Aucun champ modifiable fourni."});
+    payload.date_modification=localTimestamp();
+    const rows=await supabaseRequest("pannes",{method:"PATCH",query:"?id=eq."+encodeURIComponent(req.params.id)+"&select=*",prefer:"return=representation",body:payload});
+    return res.json({...rows[0],peut_modifier:true});
+  }catch(e){return res.status(502).json({error:"Modification panne impossible : "+e.message});}
 });
-
 
 
 app.get("/api/tables/:table", requireAuth, async (req, res) => {
