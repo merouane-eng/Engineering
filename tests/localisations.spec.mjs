@@ -76,9 +76,9 @@ for(const size of [{width:390,height:844},{width:1366,height:768}]){
   expect(saves[0].unite).toBe("QC__S02");
   expect("groupe" in saves[0]).toBe(false);
   await navigate("pm");
-  await expect(page.getByText("QC · Site 01",{exact:true}).first()).toBeVisible();
+  await expect(page.locator(".tableWrap tbody td").filter({hasText:"QC · Site 01"}).first()).toBeVisible();
   await navigate("liste");
-  await expect(page.getByText("QC · Site 02",{exact:true}).first()).toBeVisible();
+  await expect(page.locator(".tableWrap tbody td").filter({hasText:"QC · Site 02"}).first()).toBeVisible();
   await navigate("effectif");
   await expect(page.getByText("Localisation",{exact:false}).first()).toBeVisible();
   await navigate("stats");
