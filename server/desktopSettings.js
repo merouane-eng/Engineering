@@ -3,10 +3,11 @@
  * Les données métier ne sont jamais supprimées ni renommées silencieusement. */
 import crypto from "node:crypto";
 import {makeXlsx,readXlsx,makeMultiSheetXlsx} from "./excel.js";
+import {localisationCode,localisationSite} from "../client/src/locationModel.js";
 
 export const REFERENCE_TABS = [
   ["service","Services"],["fonction","Fonctions"],["zone","Zones"],
-  ["unite","Unités"],["groupe","Groupes"],["frequence_pm","Fréquences PM"],
+  ["unite","Localisations"],["frequence_pm","Fréquences PM"],
   ["statut_pm","Statuts PM"],["statut_panne","Statuts panne"],
   ["area_SG01","Areas — Services généraux Site 01"],
   ["equipement_SG01","Équipements — Services généraux Site 01"],
@@ -96,7 +97,8 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
     const parent=escapeCsv(req.body?.parent)||null;
     if(!VALID.has(type))throw new Error("Type de liste non autorisé.");
     if(!valeur||valeur.length>120)throw new Error("Valeur obligatoire (120 caractères maximum).");
-    if(parent&&parent.length>120)throw new Error("Groupe parent trop long.");
+    if(type==="unite")return {type,valeur:localisationCode(valeur,String(req.body?.site||"").trim()),parent:null};
+    if(parent&&parent.length>120)throw new Error("Valeur associée trop longue.");
     return {type,valeur,parent};
   }
   function getFile(req){
@@ -128,26 +130,23 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
         if(seen.has(key))throw new Error("Doublon dans le fichier.");
         seen.add(key);
         if(refs.has(key)){duplicates++;continue;}
-        if(type==="unite"&&parent&&!existing.some(r=>r.type_liste==="groupe"&&norm(r.valeur)===norm(parent))
-          &&!rows.some(x=>escapeCsv(x[names.indexOf("type_liste")])==="groupe"&&norm(x[names.indexOf("valeur")])===norm(parent)))
-          throw new Error("Groupe parent inexistant.");
-        actions.push({type,value,parent,line:i+2});
+        if(type==="unite"&&parent&&parent!=="Site 01"&&parent!=="Site 02")throw new Error("Le site doit être Site 01 ou Site 02.");
+        actions.push({type,value,parent:type==="unite"?null:parent,line:i+2});
       }catch(e){errors.push({line:i+2,message:e.message});}
     }
-    // Insérer les groupes d'abord, pour garantir le lien avec leurs unités.
-    actions.sort((a,b)=>(a.type==="groupe"?-1:0)-(b.type==="groupe"?-1:0));
+    // Les codes de localisation sont uniques par site : aucun groupe nécessaire.
     return {hash,total:rows.length,creations:actions.length,duplicates,errors,actions};
   }
   return {
     rpc,admin,list,getUsage,safe,checkInput,preview,
     register(app,requireAuth){
       app.get("/api/references/active",requireAuth,safe(async(req,res)=>{
-        const refs=(await list()).filter(r=>r.actif);
+        const refs=(await list()).filter(r=>r.actif&&r.type_liste!=="groupe");
         res.json(refs.map(r=>({type_liste:r.type_liste,valeur:r.valeur,parent:r.parent,ordre:r.ordre})));
       }));
       app.get("/api/settings/references",requireAuth,admin,safe(async(req,res)=>{
         const [refs,usage]=await Promise.all([list(),getUsage()]);
-        res.json(refs.map(r=>({...r,usage:usage[r.type_liste+"|"+norm(r.valeur)]||0})));
+        res.json(refs.filter(r=>r.type_liste!=="groupe").map(r=>({...r,site:r.type_liste==="unite"?localisationSite(r.valeur):null,usage:usage[r.type_liste+"|"+norm(r.valeur)]||0})));
       }));
       app.post("/api/settings/references",requireAuth,admin,safe(async(req,res)=>{
         const {type,valeur,parent}=checkInput(req);
@@ -172,11 +171,11 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
       // Jamais d'identifiants de connexion ni password_hash dans le fichier.
       app.get("/api/settings/backup/global",requireAuth,admin,safe(async(req,res)=>{
         const schema=[
-          ["machines","Machines",["tag","designation","unite","groupe","zone","marque","modele","numero_serie","date_mise_service","actif","commentaire"]],
+          ["machines","Machines",["tag","designation","site","unite","zone","marque","modele","numero_serie","date_mise_service","actif","commentaire"]],
           ["effectif","Effectif",["matricule","nom","prenom","initiale","service","fonction","telephone","email","role","actif","toutes_unites","date_recrutement","date_depart","site","type_contrat","date_fin_contrat"]],
           ["effectif_unites","Affectations",["effectif_id","unite"]],
           ["pannes","Pannes",["wo","date_panne","heure_panne","date_debut","date_fin","unite","machine","probleme","area","service","mois","technicien","downtime","statut","commentaire","pieces_consommees"]],
-          ["pm_programmees","PM programmees",["machine_tag","machine_designation","unite","groupe","frequence","tolerance_jours","date_prevue","mois","annee","statut","responsable","service_intervenant","commentaire","motif_report"]],
+          ["pm_programmees","PM programmees",["machine_tag","machine_designation","unite","frequence","tolerance_jours","date_prevue","mois","annee","statut","responsable","service_intervenant","commentaire","motif_report"]],
           ["pm_realisees","PM realisees",["id_pm_prog","machine_tag","machine_designation","unite","date_prevue","date_debut","date_fin","downtime","technicien","ponctualite","commentaire","statut"]],
           ["operating_time","Operating Time",["machine","date_jour","heures_planifiees","heures_marche","heures_arret","commentaire","saisi_par"]],
           ["pieces","Pieces catalogue",["reference","nom","description","actif"]],
@@ -197,7 +196,7 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
           if(!complete)throw new Error("La table "+table+" dépasse la limite de sauvegarde ; aucune archive partielle ne sera fournie.");
           return {name,headers:fields,rows:rows.map(r=>fields.map(f=>r[f]??""))};
         }));
-        const refs=await list(),refFields=["type_liste","valeur","parent","ordre","actif"];
+        const refs=(await list()).filter(r=>r.type_liste!=="groupe"),refFields=["type_liste","valeur","parent","ordre","actif"];
         datasets.push({name:"Parametres",headers:refFields,rows:refs.map(r=>refFields.map(f=>r[f]??""))});
         datasets.unshift({name:"Informations",headers:["Champ","Valeur"],rows:[
           ["Application","Engineering — sauvegarde globale"],
@@ -214,7 +213,7 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
         res.send(bytes);
       }));
       app.get("/api/settings/backup",requireAuth,admin,safe(async(req,res)=>{
-        const refs=await list();
+        const refs=(await list()).filter(r=>r.type_liste!=="groupe");
         const cols=["type_liste","valeur","parent","ordre","actif"];
         const bytes=makeXlsx(cols,refs.map(r=>[r.type_liste,r.valeur,r.parent||"",r.ordre,r.actif?"Oui":"Non"]),{
           name:"Parametres",instructions:[
