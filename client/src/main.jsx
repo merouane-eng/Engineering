@@ -638,6 +638,7 @@ function PreventiveMaintenance({ user }) {
   const [filterMonth, setFilterMonth] = useState("");
   const [serviceDrafts, setServiceDrafts] = useState({});
   const [legacyUnit,setLegacyUnit]=useState("");
+  const [legacyMachine,setLegacyMachine]=useState("");
   const [legacyDepartment,setLegacyDepartment]=useState("");
   const [legacyPreview,setLegacyPreview]=useState(null);
   const [legacyBusy,setLegacyBusy]=useState(false);
@@ -679,18 +680,18 @@ function PreventiveMaintenance({ user }) {
     if(!legacyUnit){setLegacyNotice("Choisir une localisation.");return;}
     setLegacyBusy(true);
     try{
-      setLegacyPreview(await api("/api/pm/legacy/unassigned?unite="+encodeURIComponent(legacyUnit)));
+      setLegacyPreview(await api("/api/pm/legacy/unassigned?unite="+encodeURIComponent(legacyUnit)+(legacyMachine?"&machine_tag="+encodeURIComponent(legacyMachine):"")));
     }catch(e){setLegacyNotice(e.message);}finally{setLegacyBusy(false);}
   };
   const assignLegacy=async()=>{
     if(!legacyPreview?.unassigned||!legacyDepartment)return;
-    const confirmation="Attribuer "+legacyPreview.unassigned+" PM historiques de "+localisationName(legacyUnit,{withSite:true})+
+    const confirmation="Attribuer "+legacyPreview.unassigned+" PM historiques de "+localisationName(legacyUnit,{withSite:true})+(legacyMachine?" (machine "+legacyMachine+")":" (toutes les machines)") +
       " au département « "+legacyDepartment+" » ? Les PM déjà attribuées seront conservées.";
     if(!window.confirm(confirmation))return;
     setLegacyBusy(true);setLegacyNotice("");
     try{
       const result=await api("/api/pm/legacy/assign",{method:"POST",body:JSON.stringify({
-        unite:legacyUnit,service_intervenant:legacyDepartment,expected_count:legacyPreview.unassigned
+        unite:legacyUnit,machine_tag:legacyMachine,service_intervenant:legacyDepartment,expected_count:legacyPreview.unassigned
       })});
       setLegacyNotice(result.attributed+" PM attribuées au département "+legacyDepartment+".");
       setLegacyPreview(null);
@@ -748,12 +749,18 @@ function PreventiveMaintenance({ user }) {
     </p>}
     {isAdmin(user)&&<details className="pm-legacy-tools">
       <summary><Wrench size={16}/> Attribution des PM historiques sans département</summary>
-      <p>Les anciennes PM sans service intervenant sont invisibles aux utilisateurs non administrateurs. Choisissez la localisation et le département réel, puis consultez l'aperçu avant de confirmer. Les dates et résultats des PM restent inchangés.</p>
+      <p>Les anciennes PM sans service intervenant sont invisibles aux utilisateurs non administrateurs. Choisissez la localisation et le département réel, puis consultez l'aperçu avant de confirmer. Les dates et résultats des PM restent inchangés. Si plusieurs départements interviennent dans la même localisation, sélectionnez une machine à la fois.</p>
       <div className="pm-legacy-fields">
         <label>Localisation
-          <select value={legacyUnit} onChange={e=>{setLegacyUnit(e.target.value);setLegacyPreview(null);setLegacyNotice("");}}>
+          <select value={legacyUnit} onChange={e=>{setLegacyUnit(e.target.value);setLegacyMachine("");setLegacyPreview(null);setLegacyNotice("");}}>
             <option value="">Choisir une localisation</option>
             {units.map(u=><option key={u} value={u}>{localisationName(u,{withSite:true})}</option>)}
+          </select>
+        </label>
+        <label>Machine
+          <select value={legacyMachine} disabled={!legacyUnit} onChange={e=>{setLegacyMachine(e.target.value);setLegacyPreview(null);setLegacyNotice("");}}>
+            <option value="">Toutes les machines de la localisation</option>
+            {context.machines.filter(m=>m.unite===legacyUnit).map(m=><option key={m.tag} value={m.tag}>{m.tag} — {m.designation||""}</option>)}
           </select>
         </label>
         <label>Département
@@ -767,6 +774,7 @@ function PreventiveMaintenance({ user }) {
       {legacyPreview&&<div className="pm-legacy-preview" role="status">
         <strong>{legacyPreview.unassigned} PM sans département</strong> sur {legacyPreview.total} PM de {localisationName(legacyPreview.unite,{withSite:true})}.
         <span>{Object.entries(legacyPreview.by_status||{}).map(([status,n])=>status+" : "+n).join(" · ")}</span>
+        {!legacyMachine&&<span>Machines concernées : {Object.entries(legacyPreview.by_machine||{}).map(([machine,n])=>machine+" ("+n+")").join(" · ")}</span>}
         <button type="button" className="primary" disabled={legacyBusy||!legacyDepartment||legacyPreview.unassigned===0}
           onClick={assignLegacy}>Confirmer l'attribution au département</button>
       </div>}
