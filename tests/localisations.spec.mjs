@@ -1,6 +1,6 @@
 import {test,expect} from "@playwright/test";
 
-const URL="http://127.0.0.1:4173";
+const APP_URL="http://127.0.0.1:4173";
 const LOCS=["U1","U6","QC__S01","QC__S02","MICROBIOLOGIE__S01","MICROBIOLOGIE__S02"];
 const machines=[
  {id:1,tag:"BASE-001",designation:"Pompe",unite:"U1",site:"Site 01",zone:"Production",actif:1},
@@ -51,7 +51,7 @@ for(const size of [{width:390,height:844},{width:1366,height:768}]){
    }
    return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(mocked(path))});
   });
-  await page.goto(URL);
+  await page.goto(APP_URL);
   const navigate=async id=>{
    if(size.width<=800)await page.locator(".mobileMenu").click();
    await page.locator("aside .module-"+id).click();
