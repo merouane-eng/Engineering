@@ -1,0 +1,37 @@
+name: PM U5 - Techniciens et historique en lecture seule
+on:
+  push:
+    branches:
+      - preview/pm-techniciens-u5-lecture
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Installer et compiler Engineering
+        run: |
+          npm ci
+          npm run build
+      - name: Tester les accès U5, les historiques PM et les autres droits
+        run: |
+          node --test tests/pm-u5-techniciens.test.mjs tests/pm-historical-access.test.mjs tests/access-policy.test.mjs tests/access-routes.test.mjs tests/electrician_access.test.mjs tests/localisations.test.mjs tests/pagination.test.mjs tests/settings-admin.test.mjs tests/excel.test.mjs
+      - name: Installer Chromium
+        run: |
+          npm install --no-save @playwright/test
+          npx playwright install --with-deps chromium
+      - name: Tester technicien et shift leader U5 sur telephone et PC
+        run: |
+          npx vite preview --config client/vite.config.js --host 127.0.0.1 --port 4173 >/tmp/engineering-preview.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi
+            sleep 1
+          done
+          npx playwright test tests/pm-u5.spec.mjs tests/role-access.spec.mjs tests/localisations.spec.mjs tests/responsive.spec.mjs tests/i18n.spec.mjs --workers=1 --reporter=line
