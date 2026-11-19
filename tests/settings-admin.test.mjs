@@ -134,7 +134,7 @@ test("Backup des références : vrai XLSX relisible sans données utilisateur",a
   const r=await fx.call("GET","/api/settings/backup");
   assert.equal(r.statusCode,200);
   const rows=readXlsx(r.binary);
-  assert.deepEqual(rows[0],["type_liste","valeur","parent","ordre","actif"]);
+  assert.deepEqual(rows[0],["type_liste","valeur","site","ordre","actif"]);
   assert.ok(rows.some(x=>x[1]==="Électricité"));
   assert.ok(!r.binary.toString("utf8").includes("password_hash"));
  }finally{fx.restore();}
