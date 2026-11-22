@@ -4,7 +4,7 @@ import {readFileSync} from "node:fs";
 import {createContext,runInContext} from "node:vm";
 import {
  isAdmin,isLead,sameDepartment,machineInDepartment,panneInDepartment,
- pmInDepartment,panneEditable,nameAccess
+ pmInDepartment,panneEditable,nameAccess,permissionAllowed
 } from "../client/src/accessPolicy.js";
 import {localisationSite,SITES} from "../client/src/locationModel.js";
 import {pmVisibility} from "../client/src/pmVisibility.js";
@@ -40,7 +40,7 @@ const ctx=createContext({
  supabaseRequest:async table=>({effectif:employees,effectif_unites:links}[table]||[]),
  allowedUnitsForUser:async()=>["U1"],
  visibleMachineRows:async()=>[],pmVisibility,
- isAdmin,isLead,sameDepartment,machineInDepartment,panneInDepartment,pmInDepartment,panneEditable,nameAccess,
+ isAdmin,isLead,sameDepartment,machineInDepartment,panneInDepartment,pmInDepartment,panneEditable,nameAccess,permissionAllowed,
  localisationSite,SITES,console
 });
 runInContext(extract("const normService =","async function remoteEffectifWithUnits(user)"),ctx);

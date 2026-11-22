@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {createContext,runInContext} from "node:vm";
-import {isLead,isAdmin,panneInDepartment,panneEditable,machineInDepartment} from "../client/src/accessPolicy.js";
+import {isLead,isAdmin,panneInDepartment,panneEditable,machineInDepartment,permissionAllowed} from "../client/src/accessPolicy.js";
 
 const src=readFileSync(new URL("../server/server.js",import.meta.url),"utf8");
 const extract=(a,b)=>{const x=src.indexOf(a),y=src.indexOf(b,x+a.length);assert.ok(x>=0&&y>x,a);return src.slice(x,y);};
@@ -44,11 +44,20 @@ const supabaseRequest=async(table,{query="",method="GET",body}={})=>{
  return [];
 };
 const routes={put:{},post:{}};
+const chain=handlers=>async(req,res)=>{
+  for(const handler of handlers.slice(1,-1)){
+    let advance=false;
+    await handler(req,res,()=>{advance=true;});
+    if(!advance)return;
+  }
+  return handlers.at(-1)(req,res);
+};
 const app={
- put(path,...handlers){routes.put[path]=handlers.at(-1);},
- post(path,...handlers){routes.post[path]=handlers.at(-1);}
+ put(path,...handlers){routes.put[path]=chain(handlers);},
+ post(path,...handlers){routes.post[path]=chain(handlers);}
 };
 const ctx=createContext({app,requireAuth:()=>{},isLead,isAdmin,panneInDepartment,machineInDepartment,
+ requirePermission:(module,action)=>(req,res,next)=>permissionAllowed(req.user,module,action)?next():res.status(403).json({error:"Action non autorisée"}),
  allowedUnitsForUser:async user=>user.id==="admin"?["U1","U2"]:["U1"],
  panneCanBeEdited:async(user,row)=>panneEditable(user,row),
  supabaseRequest,localTimestamp:()=>"2026-11-19 11:00:00",

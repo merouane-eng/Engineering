@@ -70,7 +70,7 @@ test("API de réalisation interdit une PM sans service, même avec une requête 
  const routes={post:{}};
  const app={post(path,...handlers){routes.post[path]=handlers.at(-1)}};
  const ctx=createContext({
- app,requireAuth:()=>{},allowedUnitsForUser:async()=>["U5"],supabaseRequest,
+ app,requireAuth:()=>{},requirePermission:()=>()=>{},allowedUnitsForUser:async()=>["U5"],supabaseRequest,
  pmInDepartment,machineInDepartment,crypto:{randomUUID:()=> "u5-test"},console
  });
  runInContext(extract('app.post("/api/pm/:id/realiser"', 'app.put("/api/users/:id/password"'),ctx);
