@@ -16,6 +16,8 @@ import {isAdmin,isLead,canManageMachines,canPlanPM,permittedModule,permissionAll
 import DesktopSettings from "./DesktopSettings.jsx";
 import AccessPermissions from "./AccessPermissions.jsx";
 import AdminExcelBar from "./AdminExcelBar.jsx";
+import PMPlanning from "./PMPlanning.jsx";
+import {mergeRealizations} from "./pmCalendarModel.js";
 import { useLanguage, LanguageSwitch } from "./i18n.jsx";
 
 const languageForUI=()=>localStorage.getItem("engineering_language")==="en"?"en-GB":"fr-FR";
@@ -643,15 +645,20 @@ function PreventiveMaintenance({ user }) {
   const [filterUnit, setFilterUnit] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
+  const [pmView,setPmView] = useState("planning");
   const [serviceDrafts, setServiceDrafts] = useState({});
   const [form, setForm] = useState(null);
   const [realization, setRealization] = useState(null);
   const [error, setError] = useState("");
   const [realizationDraft, setRealizationDraft] = useState({ date_debut: "", date_fin: "", commentaire: "", technicien: "" });
 
-  const load = () => api("/api/modules/pm")
-    .then(data => { setRows(Array.isArray(data)?data:[]); setError(""); })
-    .catch(err => { setError("Chargement des PM impossible : "+(err?.message||"Erreur serveur")); });
+  const load = () => Promise.all([
+    api("/api/modules/pm"),
+    api("/api/tables/pm_realisees").catch(()=>[])
+  ]).then(([data,realizations])=>{
+    setRows(mergeRealizations(Array.isArray(data)?data:[],Array.isArray(realizations)?realizations:[]));
+    setError("");
+  }).catch(err=>{setError("Chargement des PM impossible : "+(err?.message||"Erreur serveur"));});
   useEffect(() => {
     load();
     api("/api/pm/context").then(data => {
@@ -721,9 +728,14 @@ function PreventiveMaintenance({ user }) {
   };
 
   return <div className="breakdownListMaster operationsMaster">
-    <PageTitle title="Maintenance préventive" subtitle={filtered.length + " / " + rows.length + " PM affichée(s)"} />
+    <PageTitle title="Maintenance préventive" subtitle={rows.length + " PM accessibles · planning et liste synchronisés"} />
     {!isAdmin(user)&&<div className="pm-electricScope"><Wrench size={16}/> Département : <strong>{user.service||"Non affecté"}</strong> — les PM attribuées sont limitées à votre département. Les anciennes PM sans service attribué sont consultables en lecture seule par les techniciens et responsables autorisés. Un administrateur doit attribuer leur service avant réalisation.</div>}
     {error && <div className="formError">{error}</div>}
+    <div className="pm-viewSwitch" role="tablist" aria-label="Mode affichage des maintenances préventives">
+      <button type="button" role="tab" aria-selected={pmView==="planning"} className={pmView==="planning"?"active":""} onClick={()=>setPmView("planning")}><CalendarDays size={16}/> Planning mensuel</button>
+      <button type="button" role="tab" aria-selected={pmView==="liste"} className={pmView==="liste"?"active":""} onClick={()=>setPmView("liste")}><ClipboardList size={16}/> Vue liste</button>
+    </div>
+    {pmView==="liste"&&<>
     <section className="bl-kpis">
       <article className="bl-kpi"><div className="bl-kpiTop"><span>TOTAL PM</span><span className="bl-kpiIcon bl-blue"><CalendarClock /></span></div><strong>{filtered.length}</strong><small>Maintenances filtrées</small></article>
       <article className="bl-kpi"><div className="bl-kpiTop"><span>PLANIFIÉES</span><span className="bl-kpiIcon bl-orange"><Clock3 /></span></div><strong>{plannedCount}</strong><small>PM restant à réaliser</small></article>
@@ -739,7 +751,9 @@ function PreventiveMaintenance({ user }) {
     </section>
     <div className="bl-count"><span><strong>{filtered.length}</strong> PM sur {rows.length}</span><span>Cartes et liste synchronisées avec les filtres</span></div>
     <div className="operationsActions">{canPlan && <button className="primary" onClick={openForm}><Plus /> Ajouter une PM</button>}</div>
-    <div className="tableWrap">
+    </>}
+    {pmView==="planning"&&<PMPlanning items={rows} user={user} canPlan={canPlan} onPlan={openForm} canRealize={permissionAllowed(user,"pm","edit")} onRealize={openRealization} canAssign={isAdmin(user)} onAssign={()=>setPmView("liste")}/>}
+    {pmView==="liste"&&<div className="tableWrap">
       <table>
         <thead><tr><th>Date prévue</th><th>Localisation</th><th>Machine</th><th>Fréquence</th><th>Responsable</th><th>Service intervenant</th><th>Statut</th><th /></tr></thead>
         <tbody>{filtered.map(row => <tr key={row.id}>
@@ -752,7 +766,7 @@ function PreventiveMaintenance({ user }) {
         </tr>)}</tbody>
       </table>
       {!filtered.length && <div className="empty">Aucune maintenance préventive</div>}
-    </div>
+    </div>}
     {form && <div className="modalBack"><form className="modal" onSubmit={save}>
       <div className="modalHead"><h3>Programmer une PM</h3><button type="button" className="iconButton" onClick={() => setForm(null)}><X /></button></div>
       <div className="formGrid">
