@@ -233,3 +233,45 @@ test("Import Excel par lots : aucune ligne extérieure au lot n'est écrite",asy
   assert.equal(invalid.statusCode,400);
   assert.equal(h.data.machines.length,121);
 });
+
+test("Contrats apprentissage et Autre : validation Excel et prévisualisation sans écriture",async()=>{
+  const h=createHarness();
+  const file=xlsx(["matricule","nom","prenom","service","fonction","type_contrat","date_debut_contrat","date_fin_contrat","commentaire_depart"],
+    [["NEW-AP1","Test","Apprenti","Maintenance","Apprenti","Apprentissage","2026-09-01","2027-08-31",""],
+     ["NEW-AU1","Test","Autre","Maintenance","Technicien","Autre","2026-01-01","",""]]);
+  const res=await h.run("POST","/api/excel/:module/:action",{params:{module:"effectif",action:"preview"},body:{file}});
+  assert.equal(res.statusCode,200,JSON.stringify(res.body));
+  assert.equal(res.body.creations,2,JSON.stringify(res.body));
+  assert.equal(res.body.errors.length,0,JSON.stringify(res.body.errors));
+  assert.equal(h.writes.length,0);
+});
+test("CDD incomplet : date de fin obligatoire, aucune écriture pendant l'aperçu",async()=>{
+  const h=createHarness();
+  const file=xlsx(["matricule","nom","prenom","service","fonction","type_contrat"],
+    [["NEW-CD1","Test","Sans date","Maintenance","Technicien","CDD"]]);
+  const res=await h.run("POST","/api/excel/:module/:action",{params:{module:"effectif",action:"preview"},body:{file}});
+  assert.equal(res.statusCode,200);
+  assert.equal(res.body.errors.length,1);
+  assert.match(res.body.errors[0].message,/Date de fin obligatoire/i);
+  assert.equal(h.writes.length,0);
+});
+test("Effectif existant : compléter sans toucher rôle, mot de passe, nom ni statut",async()=>{
+  const h=createHarness(),employee=h.data.effectif[0];
+  employee.commentaire_depart="Historique original";
+  const file=xlsx(["matricule","initiales","type_de_contrat","date_debut_de_contrat","motif_de_sortie"],
+    [["A100","AAX","CDI","2025-01-01","Fin administrative"]]);
+  const params={module:"effectif",action:"preview"};
+  const preview=await h.run("POST","/api/excel/:module/:action",{params,body:{file}});
+  assert.equal(preview.statusCode,200,JSON.stringify(preview.body));
+  assert.equal(preview.body.updates,1);
+  assert.equal(h.writes.length,0);
+  const imported=await h.run("POST","/api/excel/:module/:action",{
+    params:{module:"effectif",action:"import"},body:{file,hash:preview.body.hash}});
+  assert.equal(imported.statusCode,200,JSON.stringify(imported.body));
+  assert.equal(employee.role,"admin");
+  assert.equal(employee.nom,"Ancien");
+  assert.equal(employee.actif,true);
+  assert.equal(employee.initiale,"AAX");
+  assert.equal(employee.date_debut_contrat,"2025-01-01");
+  assert.equal(employee.commentaire_depart,"Fin administrative");
+});

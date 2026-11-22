@@ -75,15 +75,15 @@ function EffectifRH({ user, api }) {
     .filter(([key])=>iso(r[key]).startsWith(year))
     .map(([key,label])=>({id:String(r.id)+"-"+key,nom:[r.prenom,r.nom].filter(Boolean).join(" "),date:iso(r[key]),label,service:r.service})))
     .sort((a,b)=>b.date.localeCompare(a.date));
-  const contracts=[["CDI",reportRows.filter(r=>r.type_contrat==="CDI").length],["CDD",cddCount],["Non renseigné",reportRows.filter(r=>!r.type_contrat).length]];
+  const contracts=[["CDI",reportRows.filter(r=>r.type_contrat==="CDI").length],["CDD",cddCount],["Apprentissage",reportRows.filter(r=>r.type_contrat==="APPRENTISSAGE").length],["Autre",reportRows.filter(r=>r.type_contrat==="AUTRE").length],["Non renseigné",reportRows.filter(r=>!r.type_contrat).length]];
   const reset=()=>{setQuery("");setSite("");setService("");setFonction("");setUnite("");setStatus("all");};
   const changeSite=v=>{setSite(v);setService("");setFonction("");setUnite("");};
   const changeService=v=>{setService(v);setFonction("");setUnite("");};
   const newForm=()=>{setError("");setForm({matricule:"",nom:"",prenom:"",initiale:"",service:"",fonction:"",telephone:"",email:"",
-    site:"",type_contrat:"",date_fin_contrat:"",date_recrutement:"",date_depart:"",
+    site:"",type_contrat:"",date_debut_contrat:"",date_fin_contrat:"",date_recrutement:"",date_depart:"",commentaire_depart:"",
     actif:admin,is_admin:false,toutes_unites:false,units:[],service:admin?"":(user.service||"")});};
   const editForm=r=>{setError("");setForm({...r,initiale:r.initiale||"",type_contrat:r.type_contrat||"",
-    date_fin_contrat:iso(r.date_fin_contrat),date_recrutement:iso(r.date_recrutement),date_depart:iso(r.date_depart),
+    date_fin_contrat:iso(r.date_fin_contrat),date_debut_contrat:iso(r.date_debut_contrat),commentaire_depart:r.commentaire_depart||"",date_recrutement:iso(r.date_recrutement),date_depart:iso(r.date_depart),
     actif:trueValue(r.actif),is_admin:trueValue(r.is_admin),toutes_unites:trueValue(r.toutes_unites),units:employeeUnits(r)});};
   const patch=(key,value)=>setForm(old=>({...old,[key]:value}));
   const toggleUnit=u=>setForm(old=>({...old,units:old.units.includes(u)?old.units.filter(v=>v!==u):[...old.units,u]}));
@@ -93,12 +93,14 @@ function EffectifRH({ user, api }) {
     ev.preventDefault();setError("");
     if(!form.matricule||!form.nom||!form.service||!form.fonction){setError("Matricule, nom, service et fonction sont obligatoires.");return;}
     if(form.type_contrat==="CDD"&&!form.date_fin_contrat){setError("La date de fin est obligatoire pour un CDD.");return;}
-    if(form.type_contrat!=="CDD"&&form.date_fin_contrat){setError("La date de fin est réservée aux CDD.");return;}
+    if(form.type_contrat==="CDI"&&form.date_fin_contrat){setError("Un CDI ne possède pas de date de fin de contrat.");return;}
+    if(form.date_debut_contrat&&form.date_fin_contrat&&form.date_fin_contrat<form.date_debut_contrat){setError("La fin du contrat précède son début.");return;}
     if(form.date_fin_contrat&&form.date_recrutement&&form.date_fin_contrat<form.date_recrutement){setError("La fin de contrat précède le recrutement.");return;}
     setSaving(true);
     try{
       const payload={...form,site:explicitSite,initiale:clean(form.initiale)||null,
-        type_contrat:form.type_contrat||null,date_fin_contrat:form.type_contrat==="CDD"?form.date_fin_contrat:null};
+        type_contrat:form.type_contrat||null,date_fin_contrat:form.date_fin_contrat||null,date_debut_contrat:form.date_debut_contrat||null,
+        commentaire_depart:clean(form.commentaire_depart)||null};
       await api(form.id?"/api/effectif/"+form.id:"/api/effectif",{method:form.id?"PUT":"POST",body:JSON.stringify(payload)});
       setForm(null);await load();
     }catch(e){setError(e.message);}finally{setSaving(false);}
@@ -168,7 +170,9 @@ function EffectifRH({ user, api }) {
           <div className="ef-metaRow"><span>Site</span><strong>{siteLabel(row)}</strong></div>
           <div className="ef-metaRow"><span>Localisations</span><div className="ef-unitTags">{trueValue(row.toutes_unites)?<span>Toutes les localisations</span>:units.length?units.map(v=><span key={v}>{v}</span>):<span>Non affecté</span>}</div></div>
           <div className="ef-metaRow"><span>Type de contrat</span><strong className="ef-contractBadge">{row.type_contrat||"Non renseigné"}</strong></div>
-          <div className="ef-metaRow"><span>Fin de contrat</span><strong className={expired?"ef-expired":""}>{row.type_contrat==="CDD"?formatDate(row.date_fin_contrat):"—"}{expired?" · Échu":""}</strong></div>
+          <div className="ef-metaRow"><span>Début de contrat</span><strong>{formatDate(row.date_debut_contrat)}</strong></div>
+          <div className="ef-metaRow"><span>Fin de contrat</span><strong className={expired?"ef-expired":""}>{row.type_contrat!=="CDI"?formatDate(row.date_fin_contrat):"—"}{expired?" · Échu":""}</strong></div>
+          {!trueValue(row.actif)&&row.commentaire_depart&&<div className="ef-metaRow"><span>Motif de sortie</span><strong>{row.commentaire_depart}</strong></div>}
           <div className="ef-metaRow"><span>Téléphone</span><strong>{row.telephone||"—"}</strong></div>
           <div className="ef-metaRow"><span>Email</span><strong>{row.email||"—"}</strong></div>
         </div>
@@ -185,10 +189,12 @@ function EffectifRH({ user, api }) {
         <label>Initiale <small>facultatif</small><input placeholder="Ex. MR" value={form.initiale||""} onChange={e=>patch("initiale",e.target.value)}/></label>
         <label>Service *<select required disabled={!admin&&Boolean(form.id)} value={form.service||""} onChange={e=>patch("service",e.target.value)}><option value="">Sélectionner</option>{unique([...context.services,form.service]).map(v=><option key={v}>{v}</option>)}</select></label>
         <label>Fonction *<select required disabled={!admin&&Boolean(form.id)} value={form.fonction||""} onChange={e=>patch("fonction",e.target.value)}><option value="">Sélectionner</option>{unique([...context.functions,form.fonction]).map(v=><option key={v}>{v}</option>)}</select></label>
-        <label>Type de contrat<select disabled={!admin&&Boolean(form.id)} value={form.type_contrat||""} onChange={e=>setForm(old=>({...old,type_contrat:e.target.value,date_fin_contrat:e.target.value==="CDD"?old.date_fin_contrat:""}))}><option value="">Non renseigné</option><option>CDI</option><option>CDD</option></select></label>
-        <label>Fin de contrat {form.type_contrat==="CDD"?"*":""}<input type="date" required={form.type_contrat==="CDD"} disabled={form.type_contrat!=="CDD"||(!admin&&Boolean(form.id))} value={form.date_fin_contrat||""} onChange={e=>patch("date_fin_contrat",e.target.value)}/></label>
+        <label>Type de contrat<select disabled={!admin&&Boolean(form.id)} value={form.type_contrat||""} onChange={e=>setForm(old=>({...old,type_contrat:e.target.value,date_fin_contrat:e.target.value==="CDI"?"":old.date_fin_contrat}))}><option value="">Non renseigné</option><option>CDI</option><option>CDD</option><option value="APPRENTISSAGE">Apprentissage</option><option value="AUTRE">Autre</option></select></label>
+        <label>Début de contrat<input type="date" disabled={!admin&&Boolean(form.id)} value={form.date_debut_contrat||""} onChange={e=>patch("date_debut_contrat",e.target.value)}/></label>
+        <label>Fin de contrat {form.type_contrat==="CDD"?"*":""}<input type="date" required={form.type_contrat==="CDD"} disabled={form.type_contrat==="CDI"||(!admin&&Boolean(form.id))} value={form.date_fin_contrat||""} onChange={e=>patch("date_fin_contrat",e.target.value)}/></label>
         <label>Date de recrutement<input type="date" disabled={!admin&&Boolean(form.id)} value={form.date_recrutement||""} onChange={e=>patch("date_recrutement",e.target.value)}/></label>
         <label>Date de départ<input type="date" disabled={!admin&&Boolean(form.id)} value={form.date_depart||""} onChange={e=>patch("date_depart",e.target.value)}/></label>
+        <label className="fullField">Motif de sortie / commentaire<textarea rows={3} disabled={!admin&&Boolean(form.id)} value={form.commentaire_depart||""} onChange={e=>patch("commentaire_depart",e.target.value)} placeholder="Démission, fin de contrat ou autre motif renseigné..."/></label>
         <label>Téléphone<input value={form.telephone||""} onChange={e=>patch("telephone",e.target.value)}/></label>
         <label>Email<input type="email" value={form.email||""} onChange={e=>patch("email",e.target.value)}/></label>
         <label>Site<select value={explicitSite} disabled={selectedSites.length>0||(!admin&&Boolean(form.id))} onChange={e=>patch("site",e.target.value)}><option value="">Non renseigné</option>{SITES.map(s=><option key={s} value={s}>{s}</option>)}<option value="Site 01; Site 02">Les deux sites</option></select><small>Automatique si des localisations sont affectées.</small></label>

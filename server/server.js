@@ -1389,17 +1389,24 @@ function effectifRHPayload(body) {
   if (requested && ![...EF_SITES, EF_BOTH].includes(requested)) throw new Error("Site invalide.");
   if (derived && requested && derived !== requested) throw new Error("Le site ne correspond pas aux localisations affectées.");
   const type = String(body.type_contrat || "").trim().toUpperCase() || null;
+  const start = String(body.date_debut_contrat || "").trim() || null;
   const end = String(body.date_fin_contrat || "").trim() || null;
-  if (type && !["CDI", "CDD"].includes(type)) throw new Error("Type de contrat invalide.");
-  const valid = end && /^\d{4}-\d{2}-\d{2}$/.test(end) &&
-    !Number.isNaN(new Date(end+"T12:00:00Z").valueOf()) &&
-    new Date(end+"T12:00:00Z").toISOString().slice(0,10) === end;
-  if (type === "CDD" && !valid) throw new Error("Date de fin du CDD obligatoire (AAAA-MM-JJ).");
-  if (type !== "CDD" && end) throw new Error("La fin de contrat est réservée aux CDD.");
-  if (end && body.date_recrutement && end < String(body.date_recrutement).slice(0,10)) throw new Error("Date de fin antérieure au recrutement.");
+  const dateValid = d => d && /^\d{4}-\d{2}-\d{2}$/.test(d) &&
+    !Number.isNaN(new Date(d+"T12:00:00Z").valueOf()) &&
+    new Date(d+"T12:00:00Z").toISOString().slice(0,10) === d;
+  if (type && !["CDI","CDD","APPRENTISSAGE","AUTRE"].includes(type))
+    throw new Error("Type de contrat invalide.");
+  if (start && !dateValid(start)) throw new Error("Début de contrat invalide (AAAA-MM-JJ).");
+  if (end && !dateValid(end)) throw new Error("Fin de contrat invalide (AAAA-MM-JJ).");
+  if (type === "CDD" && !end) throw new Error("Date de fin du CDD obligatoire.");
+  if (type === "CDI" && end) throw new Error("Un CDI ne peut pas avoir de date de fin.");
+  if (start && end && end < start) throw new Error("Date de fin antérieure au début du contrat.");
+  if (end && body.date_recrutement && end < String(body.date_recrutement).slice(0,10))
+    throw new Error("Date de fin antérieure au recrutement.");
   return { units, rh: { site: derived || requested || null,
     initiale: String(body.initiale || "").trim() || null,
-    type_contrat: type, date_fin_contrat: end } };
+    type_contrat: type, date_debut_contrat: start, date_fin_contrat: end,
+    commentaire_depart: String(body.commentaire_depart || "").trim().slice(0,2000) || null } };
 }
 
 app.post("/api/effectif", requireAuth, requirePermission("effectif","create"), async (req, res) => {

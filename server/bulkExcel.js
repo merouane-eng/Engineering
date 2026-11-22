@@ -13,11 +13,11 @@ export const EXCEL_MODULES = {
   },
   effectif:{
     title:"Effectif",table:"effectif",key:["matricule"],
-    fields:["matricule","nom","prenom","initiale","service","fonction","telephone","email","date_recrutement","date_depart","unites","toutes_unites","site","type_contrat","date_fin_contrat","actif"],
+    fields:["matricule","nom","prenom","initiale","service","fonction","telephone","email","date_recrutement","date_depart","unites","toutes_unites","site","type_contrat","date_debut_contrat","date_fin_contrat","commentaire_depart","actif"],
     required:["matricule"],
     help:["Matricule existant : seuls site, initiale et contrat peuvent être complétés ; aucun rôle, nom ou compte n'est remplacé.",
       "Nouveau salarié : nom, prénom, service et fonction obligatoires ; compte désactivé pour la connexion jusqu'à configuration par l'administrateur.",
-      "CDI sans date de fin ; CDD avec date de fin obligatoire.","Initiale facultative ; les cellules vides ne suppriment pas les valeurs existantes.",
+      "CDI sans date de fin ; CDD avec date de fin obligatoire ; Apprentissage et Autre autorisés avec une fin facultative.","Initiale facultative ; les cellules vides ne suppriment pas les valeurs existantes.",
       "Localisations séparées par ; (exemple U3-1;QC__S02). Site calculé selon les localisations."]
   },
   pannes:{
@@ -48,7 +48,7 @@ const coerce = value => String(value??"").trim();
 const cleanHeader = value => String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()
   .replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
 const aliases = {
-  type_de_contrat:"type_contrat",date_de_fin_de_contrat:"date_fin_contrat",
+  type_de_contrat:"type_contrat",date_de_debut_de_contrat:"date_debut_contrat",date_debut_de_contrat:"date_debut_contrat",date_de_fin_de_contrat:"date_fin_contrat",date_fin_contrat:"date_fin_contrat",motif_de_sortie:"commentaire_depart",commentaire_de_depart:"commentaire_depart",
   fin_de_contrat:"date_fin_contrat",unite_s:"unites",unit_s:"unites",
   localisation:"unite",localisations:"unites",location:"unite",
   date_de_panne:"date_panne",date_d_intervention:"date_debut",numero_wo:"wo",
@@ -86,7 +86,7 @@ function dateValue(value) {
   if(Number.isNaN(d.valueOf())||d.toISOString().slice(0,10)!==date)throw new Error("Date calendrier invalide.");
   return date;
 }
-const dateFields = new Set(["date_mise_service","date_recrutement","date_depart","date_fin_contrat","date_panne","date_jour","date_prevue"]);
+const dateFields = new Set(["date_mise_service","date_recrutement","date_depart","date_debut_contrat","date_fin_contrat","date_panne","date_jour","date_prevue"]);
 function normalizeRow(row,fields){
   const payload={};
   for(const field of fields){
@@ -105,15 +105,16 @@ function normalizeSite(value){
   if(s===siteBoth||s==="Site 01"||s==="Site 02")return s;
   throw new Error("Site invalide (Site 01, Site 02 ou Site 01; Site 02).");
 }
-function contract(type,end,recruitment,existing=null){
+function contract(type,start,end,recruitment,existing=null){
   const t=coerce(type||existing?.type_contrat).toUpperCase()||null;
-  let d=end?dateValue(end):null;
-  if(t!=="CDI"&&t!=="CDD"&&t!==null)throw new Error("Contrat : CDI ou CDD uniquement.");
-  if(t==="CDD"&&!d && existing?.type_contrat==="CDD")d=existing.date_fin_contrat||null;
-  if(t==="CDD"&&!d)throw new Error("Date de fin obligatoire pour CDD.");
-  if(t!=="CDD"&&d)throw new Error("Date de fin réservée au CDD.");
-  if(d&&recruitment&&d<dateValue(recruitment))throw new Error("Date fin antérieure au recrutement.");
-  return {type_contrat:t,date_fin_contrat:t==="CDD"?d:null};
+  const began=start?dateValue(start):existing?.date_debut_contrat||null;
+  let finished=end?dateValue(end):existing?.date_fin_contrat||null;
+  if(t&&!["CDI","CDD","APPRENTISSAGE","AUTRE"].includes(t))throw new Error("Type de contrat invalide.");
+  if(t==="CDD"&&!finished)throw new Error("Date de fin obligatoire pour CDD.");
+  if(t==="CDI"&&finished)throw new Error("Un CDI ne peut pas avoir de date de fin.");
+  if(began&&finished&&finished<began)throw new Error("Fin du contrat antérieure à son début.");
+  if(finished&&recruitment&&finished<dateValue(recruitment))throw new Error("Fin du contrat antérieure au recrutement.");
+  return {type_contrat:t,date_debut_contrat:began,date_fin_contrat:finished};
 }
 function normalizeForSave(module,row,context,existing){
   const now=new Date().toISOString();
@@ -132,12 +133,13 @@ function normalizeForSave(module,row,context,existing){
     const s=normalizeSite(row.site);
     if(siteDerived&&s&&s!==siteDerived)throw new Error("Site incohérent avec les localisations affectées.");
     const desiredSite=siteDerived||s||null;
-    const contractData=contract(row.type_contrat,row.date_fin_contrat,row.date_recrutement,existing);
+    const contractData=contract(row.type_contrat,row.date_debut_contrat,row.date_fin_contrat,row.date_recrutement,existing);
     if(existing) {
       const changed={};
       if(coerce(row.initiale))changed.initiale=coerce(row.initiale);
       if(row.site||unitCodes.length||all)changed.site=desiredSite;
-      if(row.type_contrat||row.date_fin_contrat)Object.assign(changed,contractData);
+      if(row.type_contrat||row.date_debut_contrat||row.date_fin_contrat)Object.assign(changed,contractData);
+      if(coerce(row.commentaire_depart)&&coerce(row.commentaire_depart)!=="/")changed.commentaire_depart=coerce(row.commentaire_depart).slice(0,2000);
       return {update:changed,units:[]};
     }
     for(const f of ["nom","prenom","service","fonction"])if(!coerce(row[f]))throw new Error(f+" obligatoire pour un nouveau collaborateur.");
@@ -146,7 +148,7 @@ function normalizeForSave(module,row,context,existing){
       initiale:coerce(row.initiale)||null,service:coerce(row.service),fonction:coerce(row.fonction),
       telephone:coerce(row.telephone)||null,email:coerce(row.email)||null,
       date_recrutement:row.date_recrutement||null,date_depart:row.date_depart||null,
-      role:"technicien",actif:bool(row.actif,true),
+      role:"technicien",actif:false,commentaire_depart:coerce(row.commentaire_depart)&&coerce(row.commentaire_depart)!=="/"?coerce(row.commentaire_depart).slice(0,2000):null,
       toutes_unites:all,site:desiredSite, ...contractData},
       units:unitCodes};
   }

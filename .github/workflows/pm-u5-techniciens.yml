@@ -5,6 +5,7 @@ on:
       - preview/pm-techniciens-u5-lecture
       - preview/gestion-acces-roles-personnes
       - preview/planning-pm-mensuel
+      - preview/effectif-contrats-nov2026
   workflow_dispatch:
 permissions:
   contents: read

@@ -184,7 +184,7 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
       app.get("/api/settings/backup/global",requireAuth,admin,safe(async(req,res)=>{
         const schema=[
           ["machines","Machines",["tag","designation","site","unite","zone","marque","modele","numero_serie","date_mise_service","actif","commentaire"]],
-          ["effectif","Effectif",["matricule","nom","prenom","initiale","service","fonction","telephone","email","role","actif","toutes_unites","date_recrutement","date_depart","site","type_contrat","date_fin_contrat"]],
+          ["effectif","Effectif",["matricule","nom","prenom","initiale","service","fonction","telephone","email","role","actif","toutes_unites","date_recrutement","date_depart","site","type_contrat","date_debut_contrat","date_fin_contrat","commentaire_depart"]],
           ["effectif_unites","Affectations",["effectif_id","unite"]],
           ["pannes","Pannes",["wo","date_panne","heure_panne","date_debut","date_fin","unite","machine","probleme","area","service","mois","technicien","downtime","statut","commentaire","pieces_consommees"]],
           ["pm_programmees","PM programmees",["machine_tag","machine_designation","unite","frequence","tolerance_jours","date_prevue","mois","annee","statut","responsable","service_intervenant","commentaire","motif_report"]],
