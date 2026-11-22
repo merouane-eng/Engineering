@@ -181,3 +181,55 @@ test("Templates XLSX : les cinq modules ont tous leurs champs sans données",asy
     assert.equal(rows.length,1);
   }
 });
+
+test("La limite de 1 000 lignes est identique pour les cinq modules Excel",async()=>{
+  const day=i=>new Date(Date.UTC(2027,0,1+i)).toISOString().slice(0,10);
+  const cases=[
+    ["machines",["tag","designation","unite"],i=>["EX-"+i,"Machine test","U3-1"]],
+    ["effectif",["matricule","nom","prenom","service","fonction"],i=>["EMP-"+i,"Nom","Prénom","Électricité","Technicien"]],
+    ["pannes",["wo","date_panne","unite","machine","probleme"],i=>["WO-"+i,"2027-01-01","U3-1","M-1","Test"]],
+    ["pm",["machine_tag","unite","frequence","date_prevue"],i=>["M-1","U3-1","Mensuelle",day(i)]],
+    ["operating",["machine","date_jour","heures_marche"],i=>["M-1",day(i),"8"]]
+  ];
+  for(const [module,columns,row] of cases){
+    const h=createHarness();
+    const values=Array.from({length:1000},(_,i)=>row(i));
+    const file=xlsx(columns,values);
+    const ok=await h.run("POST","/api/excel/:module/:action",
+      {params:{module,action:"preview"},body:{file}});
+    assert.equal(ok.statusCode,200,module+": "+ok.body.error);
+    assert.equal(ok.body.total,1000,module);
+    assert.equal(ok.body.errors.length,0,module+": "+JSON.stringify(ok.body.errors.slice(0,2)));
+    assert.equal(h.writes.length,0,module+" preview must not write");
+    const over=await h.run("POST","/api/excel/:module/:action",
+      {params:{module,action:"preview"},body:{file:xlsx(columns,[...values,row(1000)])}});
+    assert.equal(over.statusCode,400,module);
+    assert.match(over.body.error,/Maximum 1000 lignes/,module);
+    assert.equal(h.writes.length,0,module+" rejected upload must not write");
+  }
+});
+test("Import Excel par lots : aucune ligne extérieure au lot n'est écrite",async()=>{
+  const h=createHarness();
+  const values=Array.from({length:120},(_,i)=>["LOT-"+i,"Équipement","U3-1"]);
+  const file=xlsx(["tag","designation","unite"],values);
+  const preview=await h.run("POST","/api/excel/:module/:action",
+    {params:{module:"machines",action:"preview"},body:{file}});
+  assert.equal(preview.statusCode,200);
+  const write=async(start,size)=>h.run("POST","/api/excel/:module/:action",
+    {params:{module:"machines",action:"import"},body:{file,hash:preview.body.hash,batchStart:start,batchSize:size}});
+  let r=await write(0,50);
+  assert.equal(r.statusCode,200);
+  assert.equal(r.body.imported,50);
+  assert.equal(h.data.machines.length,51);
+  r=await write(50,50);
+  assert.equal(r.body.imported,50);
+  r=await write(100,20);
+  assert.equal(r.body.imported,20);
+  assert.equal(h.data.machines.length,121);
+  r=await write(0,50);
+  assert.equal(r.body.imported,0);
+  assert.equal(h.data.machines.length,121);
+  const invalid=await write(0,101);
+  assert.equal(invalid.statusCode,400);
+  assert.equal(h.data.machines.length,121);
+});

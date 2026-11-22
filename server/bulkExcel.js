@@ -42,7 +42,7 @@ export const EXCEL_MODULES = {
       "Le total ne peut pas dépasser 24 h par jour."]
   }
 };
-const MAX_ROWS=300;
+const MAX_ROWS=1000;
 const FORBIDDEN=new Set(["id","uuid","role","username","password","password_hash","created_at","updated_at","date_creation","date_modification"]);
 const coerce = value => String(value??"").trim();
 const cleanHeader = value => String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()
@@ -220,7 +220,7 @@ function spreadsheet(module,rows,template=false) {
   }));
   const notes=[["Usage","Gabarit compatible avec le module "+schema.title],
     ["Import","Contrôle préalable obligatoire ; doublons ignorés ; aucune suppression automatique."],
-    ["Lignes","300 maximum par import. Découper les gros fichiers si nécessaire."],
+    ["Lignes","1 000 maximum par import. Les fichiers sont traités par petits lots pour éviter les délais d'attente."],
     ...schema.required.map(field=>[field,"Obligatoire pour un nouvel enregistrement."]),
     ...schema.help.map((s,i)=>["Note "+(i+1),s])];
   return makeXlsx(schema.fields.map(key=>key==="unite"?"Localisation":key==="unites"?"Localisations":key),values,{name:schema.title.replace(/\//g,"-"),instructions:notes});
@@ -313,8 +313,17 @@ export function registerExcelRoutes(app,{requireAuth,supabaseRequest,remoteEffec
       if(action==="preview")return res.json(Object.fromEntries(Object.entries(preview).filter(([k])=>k!=="actions")));
       if(preview.errors.length)return res.status(422).json({error:"Corriger les erreurs indiquées avant import.",...Object.fromEntries(Object.entries(preview).filter(([k])=>k!=="actions"))});
       if(preview.hash!==req.body.hash)return res.status(409).json({error:"Le fichier a changé depuis la prévisualisation."});
+      // Import par plages : limite le temps d'exécution de chaque fonction Vercel.
+      const hasBatch=req.body.batchStart!==undefined||req.body.batchSize!==undefined;
+      let selected=preview.actions;
+      if(hasBatch){
+        const start=req.body.batchStart,size=req.body.batchSize;
+        if(!Number.isInteger(start)||!Number.isInteger(size)||start<0||start>=preview.total||size<1||size>100)
+          return res.status(400).json({error:"Lot d'import invalide (100 lignes maximum par requête)."});
+        selected=selected.filter(a=>a.line>=start+2&&a.line<start+size+2);
+      }
       let imported=0,updated=0;const failures=[];
-      for(const action of preview.actions){
+      for(const action of selected){
         try{
           if(action.kind==="update"){
             const result=await supabaseRequest("effectif",{

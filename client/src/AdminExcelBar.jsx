@@ -8,6 +8,7 @@ const DATASETS=[
   {id:"pm",label:"Maintenance préventive"},
   {id:"operating",label:"Operating Time"}
 ];
+const IMPORT_BATCH_SIZE=50;
 const FOR_MODULE={
   machines:"machines",effectif:"effectif",saisie:"pannes",liste:"pannes",
   pm:"pm",operating:"operating"
@@ -31,6 +32,7 @@ const triggerSave=(blob,filename)=>{
 export default function AdminExcelBar({module,onSuccess}){
   const [dataset,setDataset]=useState(FOR_MODULE[module]||"machines");
   const [busy,setBusy]=useState(""),[error,setError]=useState(""),[preview,setPreview]=useState(null),[report,setReport]=useState(null);
+  const [importProgress,setImportProgress]=useState(0);
   const picker=useRef(null);
   useEffect(()=>{
     setDataset(FOR_MODULE[module]||"machines");
@@ -48,11 +50,11 @@ export default function AdminExcelBar({module,onSuccess}){
       setReport({message:action==="template"?"Template Excel téléchargé.":"Export Excel téléchargé.",ok:true});
     }catch(e){setError(e.message);}finally{setBusy("");}
   };
-  const send=async(action,file,hash)=>{
-    const encoded=await fileBase64(file);
+  const send=async(action,file,hash,options={},preparedEncoded=null)=>{
+    const encoded=preparedEncoded??await fileBase64(file);
     const response=await fetch("/api/excel/"+dataset+"/"+action,{
       method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token()},
-      body:JSON.stringify({file:encoded,...(hash?{hash}:{})})
+      body:JSON.stringify({file:encoded,...(hash?{hash}:{}),...options})
     });
     const data=await response.json().catch(()=>({error:"Réponse serveur illisible."}));
     if(!response.ok)throw new Error(data.error+(data.errors?.length?" · "+data.errors.slice(0,3).map(x=>"Ligne "+x.line+" : "+x.message).join(" / "):""));
@@ -61,7 +63,7 @@ export default function AdminExcelBar({module,onSuccess}){
   const selectFile=async event=>{
     const file=event.target.files?.[0];event.target.value="";
     if(!file)return;
-    setError("");setPreview(null);setReport(null);
+    setError("");setPreview(null);setReport(null);setImportProgress(0);
     if(!file.name.toLowerCase().endsWith(".xlsx")){setError("Sélectionner un classeur Excel .xlsx.");return;}
     if(file.size>3*1024*1024){setError("Le fichier dépasse 3 Mo. Découper les données en plusieurs fichiers.");return;}
     setBusy("preview");
@@ -72,14 +74,33 @@ export default function AdminExcelBar({module,onSuccess}){
   };
   const confirmImport=async()=>{
     if(!preview||preview.errors?.length)return;
-    setBusy("import");setError("");
+    setBusy("import");setError("");setImportProgress(0);
+    let imported=0,updated=0,processed=0;
+    const errors=[];
     try{
-      const data=await send("import",preview.file,preview.hash);
-      setReport({message:data.message,imported:data.imported,updated:data.updated,
-        duplicates:data.duplicates,errors:data.errors||[],ok:!(data.errors||[]).length});
+      // Réutiliser le fichier encodé ; chaque requête ne traite que 50 lignes.
+      const encoded=await fileBase64(preview.file);
+      for(let start=0;start<preview.total;start+=IMPORT_BATCH_SIZE){
+        const size=Math.min(IMPORT_BATCH_SIZE,preview.total-start);
+        const data=await send("import",preview.file,preview.hash,{batchStart:start,batchSize:size},encoded);
+        imported+=data.imported||0;
+        updated+=data.updated||0;
+        errors.push(...(data.errors||[]));
+        processed=start+size;
+        setImportProgress(processed);
+      }
+      setReport({message:errors.length?"Import partiel : vérifier les erreurs de lignes.":"Import terminé.",
+        imported,updated,duplicates:preview.duplicates,errors,ok:errors.length===0});
       setPreview(null);
-      if(data.imported||data.updated)onSuccess?.();
-    }catch(e){setError(e.message);}finally{setBusy("");}
+      if(imported||updated)onSuccess?.();
+    }catch(e){
+      setError((processed?"Import interrompu après "+processed+" lignes. Les données déjà importées sont conservées ; relancer l'import ignorera les doublons. ":"")+e.message);
+      if(imported||updated){
+        setReport({message:"Import partiel : certaines lignes ont été enregistrées.",
+          imported,updated,duplicates:preview.duplicates,errors,ok:false});
+        onSuccess?.();
+      }
+    }finally{setBusy("");}
   };
   return <section className="adminExcel" aria-label="Gestion Excel administrateur">
     <div className="adminExcelTop">
@@ -95,7 +116,7 @@ export default function AdminExcelBar({module,onSuccess}){
       <button type="button" disabled={Boolean(busy)} className="adminExcelButton" onClick={()=>download("export")}><Download size={16}/> Exporter</button>
       <button type="button" disabled={Boolean(busy)} className="adminExcelButton accent" onClick={()=>picker.current?.click()}><Upload size={16}/> Importer</button>
       <input ref={picker} hidden type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={selectFile}/>
-      {busy&&<span className="adminExcelLoading">{busy==="preview"?"Analyse du fichier…":busy==="import"?"Import en cours…":"Préparation Excel…"}</span>}
+      {busy&&<span className="adminExcelLoading">{busy==="preview"?"Analyse du fichier…":busy==="import"?"Import en cours… "+importProgress+" / "+(preview?.total||0)+" lignes":"Préparation Excel…"}</span>}
     </div>
     {preview&&<div className="adminExcelPreview">
       <div className="adminExcelPreviewHead">
