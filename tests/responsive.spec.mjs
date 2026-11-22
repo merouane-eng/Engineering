@@ -90,7 +90,7 @@ for(const size of sizes){
       if(module==="parametres"){
         await expect(page.getByText("Paramètres & accès")).toBeVisible();
         await expect(page.getByText("Paramètres de l'application")).toBeVisible();
-        await expect(page.getByRole("tab")).toHaveCount(11);
+        await expect(page.locator(".ds-tabs").getByRole("tab")).toHaveCount(11);
         await page.getByRole("tab",{name:/Localisations/}).click();
         await expect(page.locator(".ds-actionbar")).toBeVisible();
         await page.locator(".ds-actionbar .ds-primary").click();
@@ -98,6 +98,16 @@ for(const size of sizes){
         const box=await page.locator(".ds-modal").boundingBox();
         expect(box.width).toBeLessThanOrEqual(size.width+2);
         await page.locator(".ds-modal button[aria-label='Fermer']").click();
+      }
+      if(module==="pm"){
+        await expect(page.getByRole("tab",{name:/Planning mensuel/})).toBeVisible();
+        await expect(page.getByRole("heading",{name:"Planning préventif"})).toBeVisible();
+        const calendarDays=await page.locator(".pmcal-grid .pmcal-day").count();
+        expect(calendarDays).toBeGreaterThanOrEqual(28);
+        expect(calendarDays%7).toBe(0);
+        await page.getByRole("tab",{name:/Vue liste/}).click();
+        await expect(page.locator(".tableWrap")).toBeVisible();
+        await page.getByRole("tab",{name:/Planning mensuel/}).click();
       }
       if(["liste","pm","machines"].includes(module)){
         const sc=await page.locator(".tableWrap").first().evaluate(el=>el.clientWidth).catch(()=>null);

@@ -147,7 +147,7 @@ export default function PMPlanning({items=[],user,canRealize=false,onRealize,can
         {selectedStatus==="done"&&<div className="pmcal-completed"><span className="pmcal-completedAvatar">{initials(selected.realisation_technicien)}</span><div><strong>Maintenance réalisée</strong><span>{selected.realisation_technicien||"Technicien non renseigné dans l'historique"}</span>{selected.realisation_date&&<small>Terminé le {dateLabel(selected.realisation_date)}</small>}</div><CheckCircle2 size={24}/></div>}
         {selected.consultation_seule&&<div className="pmcal-readOnly"><AlertTriangle size={16}/> Consultation seule : attribution du service nécessaire pour intervenir.</div>}
         <div className="pmcal-dialogActions"><button type="button" onClick={()=>setSelected(null)}>Fermer</button>
-          {canRealize&&selectedStatus==="planned"&&!selected.consultation_seule&&
+          {canRealize&&["planned","late"].includes(selectedStatus)&&String(selected.statut||"").trim()==="Planifiée"&&!selected.consultation_seule&&
             <button className="pmcal-go" type="button" onClick={()=>{onRealize?.(selected);setSelected(null)}}><CheckCircle2 size={16}/> Marquer réalisée</button>}
           {canAssign&&selected.attribution_requise&&<button className="pmcal-go" type="button" onClick={()=>{onAssign?.(selected);setSelected(null)}}>Voir dans la liste <ArrowUpRight size={15}/></button>}
         </div>
