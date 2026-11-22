@@ -1819,6 +1819,8 @@ app.get("*", (_req, res) => res.sendFile(path.join(clientDist, "index.html")));
 
 export { app };
 export { initDatabase };
+// On Vercel, Supabase-backed endpoints must not await the legacy SQLite cache hydrate.
+export const remoteDatabaseConfigured=Boolean(SUPABASE_URL&&SUPABASE_ANON_KEY);
 
 if (!process.env.VERCEL) {
   initDatabase().then(() => {
