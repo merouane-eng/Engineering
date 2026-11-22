@@ -8,7 +8,8 @@ import { fileURLToPath } from "url";
 import { registerExcelRoutes } from "./bulkExcel.js";
 import { readAllSupabase } from "./paginatedSupabase.js";
 import { localisationSite, SITES } from "../client/src/locationModel.js";
-import {isAdmin,isLead,permittedModule,sameDepartment,machineInDepartment,panneInDepartment,pmInDepartment,employeeOwnsPanne,panneEditable,nameAccess} from "../client/src/accessPolicy.js";
+import {isAdmin,isLead,permittedModule,permissionAllowed,sameDepartment,machineInDepartment,panneInDepartment,pmInDepartment,employeeOwnsPanne,panneEditable,nameAccess} from "../client/src/accessPolicy.js";
+import {createAccessManager} from "./accessSettings.js";
 import {pmVisibility} from "../client/src/pmVisibility.js";
 import { createSettingsHandlers } from "./desktopSettings.js";
 
@@ -56,6 +57,7 @@ async function supabaseRequest(table, options = {}) {
 
 
 const supabaseReadAll=(table,query)=>readAllSupabase(supabaseRequest,table,query);
+const accessManager=createAccessManager({supabaseRequest});
 
 const SUPABASE_TABLES = {
   machines: "machines",
@@ -609,7 +611,7 @@ async function remoteEffectifWithUnits(user) {
   const units=new Set(await allowedUnitsForUser(user));
   return employees.filter(employee=>{
     if(isAdmin(user))return true;
-    if(!isLead(user)||!sameDepartment(user,employee.service))return false;
+    if(!permissionAllowed(user,"effectif","view")||!sameDepartment(user,employee.service))return false;
     const linked=unitsByEmployee.get(String(employee.id))||[];
     return linked.some(unit=>units.has(unit))||
       (employee.toutes_unites&&SITES.some(site=>String(employee.site||"").includes(site)&&[...units].some(unit=>localisationSite(unit)===site)));
@@ -761,6 +763,7 @@ async function requireAuth(req,res,next){
       const localEmployee=tokenUser.matricule?dbGet("SELECT id FROM techniciens WHERE matricule=? LIMIT 1",[tokenUser.matricule]):null;
       req.user={...tokenUser,id:localEmployee?.id??tokenUser.id,role:roleFor(tokenUser)};
     }
+    req.user.permissions=await accessManager.resolve(req.user);
     next();
   }catch(error){return res.status(503).json({error:"Vérification du compte indisponible."});}
 }
@@ -781,6 +784,10 @@ function requireModule(module) {
     }
     next();
   };
+}
+function requirePermission(module,action){
+  return (req,res,next)=>permissionAllowed(req.user,module,action)?next():
+    res.status(403).json({error:"Action non autorisée pour ce module."});
 }
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, database: DB_PATH }));
@@ -844,6 +851,7 @@ app.post("/api/auth/login", async (req, res) => {
         toutes_unites: Boolean(user.toutes_unites)
       };
       delete publicUser.password_hash;
+      publicUser.permissions=await accessManager.resolve(publicUser);
       const token = issueSessionToken(publicUser);
       res.json({ token, user: publicUser });
       return;
@@ -869,7 +877,7 @@ app.post("/api/auth/logout", requireAuth, (req, res) => {
 
 app.get("/api/me", requireAuth, (req, res) => res.json(req.user));
 
-app.get("/api/saisie/context", requireAuth, async (req, res) => {
+app.get("/api/saisie/context", requireAuth, requireModule("saisie"), async (req, res) => {
   try {
     const [units, allMachines, employees, references] = await Promise.all([
       allowedUnitsForUser(req.user),
@@ -893,7 +901,7 @@ app.get("/api/saisie/context", requireAuth, async (req, res) => {
 
 
 
-app.get("/api/pm/context", requireAuth, async (req, res) => {
+app.get("/api/pm/context", requireAuth, requireModule("pm"), async (req, res) => {
   try {
     const [units, allMachines, employees, programmes, references] = await Promise.all([
       userUnits(req.user),
@@ -917,7 +925,7 @@ app.get("/api/pm/context", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/operating/context", requireAuth, async (req, res) => {
+app.get("/api/operating/context", requireAuth, requireModule("operating"), async (req, res) => {
   try {
     const units = await allowedUnitsForUser(req.user);
     const [allMachines, entries] = await Promise.all([
@@ -930,7 +938,7 @@ app.get("/api/operating/context", requireAuth, async (req, res) => {
   } catch (error) { res.status(502).json({ error: `Chargement Operating Time impossible: ${error.message}` }); }
 });
 
-app.post("/api/operating", requireAuth, async (req, res) => {
+app.post("/api/operating", requireAuth, requirePermission("operating","create"), async (req, res) => {
   try {
     const unit = String(req.body.unite || ""), machine = String(req.body.machine || ""), date = String(req.body.date_jour || "");
     if (!unit || !machine || !date) return res.status(400).json({ error: "Localisation, machine et date sont obligatoires" });
@@ -978,7 +986,31 @@ async function attachPieceToMachine(piece, machine) {
   });
 }
 
-app.get("/api/pieces/context", requireAuth, async (req, res) => {
+app.put("/api/operating/:id",requireAuth,requirePermission("operating","edit"),async(req,res)=>{
+  try{
+    const existing=await supabaseRequest("operating_time",{query:"?select=*&id=eq."+encodeURIComponent(req.params.id)+"&limit=1"});
+    const entry=existing[0];
+    if(!entry)return res.status(404).json({error:"Relevé introuvable."});
+    const [units,machines]=await Promise.all([
+      allowedUnitsForUser(req.user),
+      supabaseRequest("machines",{query:"?select=tag,unite,departement&tag=eq."+encodeURIComponent(entry.machine)+"&limit=1"})
+    ]);
+    const machine=machines[0];
+    if(!machine||!units.includes(machine.unite)||!machineInDepartment(req.user,machine))
+      return res.status(403).json({error:"Relevé hors de votre localisation ou département."});
+    const running=Number(req.body.heures_marche),stopped=Number(entry.heures_arret||0);
+    if(!Number.isFinite(running)||running<0||running>24||running+stopped>24.001)
+      return res.status(400).json({error:"Heures de marche invalides (0 à 24 h)."});
+    const updated=await supabaseRequest("operating_time",{
+      method:"PATCH",query:"?id=eq."+encodeURIComponent(req.params.id)+"&select=*",
+      prefer:"return=representation",
+      body:{heures_marche:running,commentaire:String(req.body.commentaire||"").slice(0,2000)}
+    });
+    return res.json(updated?.[0]||{...entry,heures_marche:running});
+  }catch(e){return res.status(502).json({error:"Modification Operating Time impossible : "+e.message});}
+});
+
+app.get("/api/pieces/context", requireAuth, requireModule("saisie"), async (req, res) => {
   try {
     const machine = String(req.query.machine || "").trim();
     if(machine){
@@ -1011,8 +1043,7 @@ app.get("/api/pieces/context", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/pieces", requireAuth, async (req, res) => {
-  if(!isLead(req.user))return res.status(403).json({error:"Réservé aux responsables."});
+app.post("/api/pieces", requireAuth, requirePermission("machines","edit"), async (req, res) => {
   try {
     const nom = String(req.body.nom || "").trim();
     const reference = String(req.body.reference || "").trim() || null;
@@ -1043,8 +1074,7 @@ app.post("/api/pieces", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/pieces/:id/machines", requireAuth, async (req, res) => {
-  if(!isLead(req.user))return res.status(403).json({error:"Réservé aux responsables."});
+app.post("/api/pieces/:id/machines", requireAuth, requirePermission("machines","edit"), async (req, res) => {
   try {
     const machine = String(req.body.machine || "").trim();
     if (!machine) return res.status(400).json({ error: "Machine obligatoire" });
@@ -1151,8 +1181,7 @@ app.get("/api/modules/:module", requireAuth, (req, res, next) => requireModule(r
 
 
 
-app.post("/api/pm", requireAuth, async (req, res) => {
-  if (!isLead(req.user)) return res.status(403).json({ error: "PM réservée aux managers, shift leaders et superviseurs" });
+app.post("/api/pm", requireAuth, requirePermission("pm","create"), async (req, res) => {
   try {
     const unit = String(req.body.unite || "");
     const tag = String(req.body.machine_tag || "");
@@ -1199,7 +1228,7 @@ app.put("/api/pm/:id/service", requireAuth, requireModule("parametres"), async (
   } catch(err){return res.status(502).json({error:`Attribution du service impossible : ${err.message}`});}
 });
 
-app.post("/api/pm/:id/realiser", requireAuth, async (req, res) => {
+app.post("/api/pm/:id/realiser", requireAuth, requirePermission("pm","edit"), async (req, res) => {
   try {
     const found = await supabaseRequest("pm_programmees", { query: `?select=*&id=eq.${encodeURIComponent(req.params.id)}&limit=1` });
     const pm = found[0];
@@ -1373,7 +1402,7 @@ function effectifRHPayload(body) {
     type_contrat: type, date_fin_contrat: end } };
 }
 
-app.post("/api/effectif", requireAuth, requireModule("parametres"), async (req, res) => {
+app.post("/api/effectif", requireAuth, requirePermission("effectif","create"), async (req, res) => {
   const matricule = String(req.body.matricule || "").trim();
   const nom = String(req.body.nom || "").trim();
   const prenom = String(req.body.prenom || "").trim();
@@ -1383,6 +1412,13 @@ app.post("/api/effectif", requireAuth, requireModule("parametres"), async (req, 
     return res.status(400).json({ error: "Matricule, nom, service et fonction sont obligatoires" });
   }
   try {
+    if(!isAdmin(req.user)&&(!sameDepartment(req.user,service)||req.body.is_admin||req.body.toutes_unites))
+      return res.status(403).json({error:"Création RH limitée à votre département, sans privilèges administrateur."});
+    if(!isAdmin(req.user)){
+      const allowed=await allowedUnitsForUser(req.user);
+      if(!Array.isArray(req.body.units)||req.body.units.some(u=>!allowed.includes(u)))
+        return res.status(403).json({error:"Localisations RH non autorisées."});
+    }
     const duplicate = await supabaseRequest("effectif", {
       query: `?select=id&matricule=eq.${encodeURIComponent(matricule)}&limit=1`
     });
@@ -1403,7 +1439,7 @@ app.post("/api/effectif", requireAuth, requireModule("parametres"), async (req, 
       matricule, nom, prenom, service, fonction, role, ...rh,
       ...(Object.prototype.hasOwnProperty.call(req.body,"telephone")?{telephone:String(req.body.telephone||"").trim()||null}:{}),
       ...(Object.prototype.hasOwnProperty.call(req.body,"email")?{email:String(req.body.email||"").trim()||null}:{}),
-      actif: req.body.actif !== false,
+      actif: isAdmin(req.user)?req.body.actif !== false:false,
       date_recrutement: req.body.date_recrutement || null,
       date_depart: req.body.date_depart || null,
       toutes_unites: Boolean(req.body.toutes_unites),
@@ -1428,7 +1464,7 @@ app.post("/api/effectif", requireAuth, requireModule("parametres"), async (req, 
   }
 });
 
-app.put("/api/effectif/:id", requireAuth, requireModule("parametres"), async (req, res) => {
+app.put("/api/effectif/:id", requireAuth, requirePermission("effectif","edit"), async (req, res) => {
   const id = String(req.params.id || "");
   const matricule = String(req.body.matricule || "").trim();
   const nom = String(req.body.nom || "").trim();
@@ -1439,6 +1475,18 @@ app.put("/api/effectif/:id", requireAuth, requireModule("parametres"), async (re
     return res.status(400).json({ error: "Matricule, nom, service et fonction sont obligatoires" });
   }
   try {
+    if(!isAdmin(req.user)){
+      // RH déléguée : seules les coordonnées sont modifiables ; jamais le rôle, les sites ni les comptes.
+      const existing=await supabaseRequest("effectif",{query:"?select=id,role,service&id=eq."+encodeURIComponent(id)+"&limit=1"});
+      if(!existing[0]||existing[0].role==="admin"||!sameDepartment(req.user,existing[0].service))
+        return res.status(403).json({error:"Collaborateur hors département ou compte protégé."});
+      const payload={initiale:String(req.body.initiale||"").trim()||null,
+        telephone:String(req.body.telephone||"").trim()||null,
+        email:String(req.body.email||"").trim()||null,updated_at:new Date().toISOString()};
+      const updated=await supabaseRequest("effectif",{method:"PATCH",query:"?id=eq."+encodeURIComponent(id)+"&select=*",prefer:"return=representation",body:payload});
+      const {password_hash,...safe}=updated?.[0]||{};
+      return res.json(safe);
+    }
     const duplicate = await supabaseRequest("effectif", {
       query: `?select=id&matricule=eq.${encodeURIComponent(matricule)}&id=neq.${encodeURIComponent(id)}&limit=1`
     });
@@ -1477,7 +1525,7 @@ app.put("/api/effectif/:id", requireAuth, requireModule("parametres"), async (re
   }
 });
 
-app.post("/api/pannes", requireAuth, async (req, res) => {
+app.post("/api/pannes", requireAuth, requirePermission("saisie","create"), async (req, res) => {
   try {
     const body = { ...req.body };
     const required = ["wo","date_panne","unite","machine","area","probleme","commentaire","statut"];
@@ -1561,7 +1609,7 @@ async function tableColumns(table) {
   return new Set(columns.map(column => column.name));
 }
 
-app.put("/api/tables/pannes/:id",requireAuth,async(req,res)=>{
+app.put("/api/tables/pannes/:id",requireAuth,requirePermission("liste","edit"),async(req,res)=>{
   try{
     const found=await supabaseRequest("pannes",{query:"?select=*&id=eq."+encodeURIComponent(req.params.id)+"&limit=1"});
     const panne=found[0];
@@ -1593,6 +1641,8 @@ app.put("/api/tables/pannes/:id",requireAuth,async(req,res)=>{
 
 app.get("/api/tables/:table", requireAuth, async (req, res) => {
   const table = req.params.table;
+  const key=({pannes:"liste",pm_programmees:"pm",pm_realisees:"pm",operating_time:"operating",ref_listes:"parametres"})[table]||table;
+  if(!permissionAllowed(req.user,key,"view"))return res.status(403).json({error:"Lecture de ce module non autorisée."});
   if (!["machines","pannes","pm_programmees","pm_realisees","operating_time","sop","ref_listes"].includes(table)) return res.status(404).json({ error: "Table non disponible" });
   if(table==="ref_listes"&&!isAdmin(req.user))return res.status(403).json({error:"Réservé aux administrateurs."});
   try {
@@ -1634,7 +1684,7 @@ async function validateMachineLocation(body){
 app.post("/api/tables/:table", requireAuth, async (req, res) => {
   const table = req.params.table;
   if(table==="machines"){
-    if(!isLead(req.user))return res.status(403).json({error:"Réservé aux responsables."});
+    if(!permissionAllowed(req.user,"machines","create"))return res.status(403).json({error:"Ajout de machine non autorisé."});
     try{
       const tag=String(req.body.tag||"").trim(),designation=String(req.body.designation||"").trim();
       if(!tag||!designation)return res.status(400).json({error:"Tag et désignation obligatoires."});
@@ -1650,7 +1700,7 @@ app.post("/api/tables/:table", requireAuth, async (req, res) => {
     }catch(e){return res.status(400).json({error:"Machine : "+e.message});}
   }
   if (table === "sop") {
-    if(!isLead(req.user))return res.status(403).json({error:"Réservé aux responsables."});
+    if(!permissionAllowed(req.user,"sop","create"))return res.status(403).json({error:"Ajout SOP non autorisé."});
     try {
       const allowed=await allowedUnitsForUser(req.user);
       if(req.body.unite&&!allowed.includes(req.body.unite))return res.status(403).json({error:"Localisation non autorisée."});
@@ -1677,7 +1727,7 @@ app.post("/api/tables/:table", requireAuth, async (req, res) => {
 app.put("/api/tables/:table/:id", requireAuth, async (req, res) => {
   const table = req.params.table;
   if(table==="machines"){
-    if(!isLead(req.user))return res.status(403).json({error:"Réservé aux responsables."});
+    if(!permissionAllowed(req.user,"machines","edit"))return res.status(403).json({error:"Modification de machine non autorisée."});
     try{
       const found=await supabaseRequest("machines",{query:"?select=*&id=eq."+encodeURIComponent(req.params.id)+"&limit=1"});
       if(!found.length)return res.status(404).json({error:"Machine introuvable."});
@@ -1704,7 +1754,7 @@ app.put("/api/tables/:table/:id", requireAuth, async (req, res) => {
     }catch(e){return res.status(400).json({error:"Modification machine : "+e.message});}
   }
   if (table === "sop") {
-    if(!isLead(req.user))return res.status(403).json({error:"Réservé aux responsables."});
+    if(!permissionAllowed(req.user,"sop","edit"))return res.status(403).json({error:"Modification SOP non autorisée."});
     try {
       const existing=await supabaseRequest("sop",{query:"?select=unite&id=eq."+encodeURIComponent(req.params.id)+"&limit=1"});
       if(!existing[0])return res.status(404).json({error:"SOP introuvable."});
@@ -1752,6 +1802,7 @@ app.delete("/api/tables/:table/:id", requireAuth, async (req, res) => {
 
 
 registerExcelRoutes(app,{requireAuth,supabaseRequest,remoteEffectifWithUnits,localTimestamp});
+accessManager.register(app,requireAuth);
 const desktopSettings=createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits});
 desktopSettings.register(app,requireAuth);
 

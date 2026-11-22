@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Users, Plus, Save, X, Search, RotateCcw, Layers, MapPin, CheckCircle2, CalendarDays, TrendingUp, BarChart3, ArrowUpRight, CircleAlert, Filter, Activity } from "lucide-react";
 import "./styles.css";
+import {permissionAllowed} from "./accessPolicy.js";
 import {SITES,localisationSite,localisationName,localisationLabel} from "./locationModel.js";
 
 const MONTHS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
@@ -44,6 +45,8 @@ function EffectifRH({ user, api }) {
   const [showRh,setShowRh]=useState(false),[year,setYear]=useState(String(new Date().getFullYear()));
   const [rhTab,setRhTab]=useState("mouvements");
   const admin=user?.role==="admin";
+  const canCreate=permissionAllowed(user,"effectif","create");
+  const canEdit=permissionAllowed(user,"effectif","edit");
   const load=async()=>{setLoading(true);setError("");try{const [employees,refs]=await Promise.all([
     api("/api/modules/effectif"),api("/api/effectif/context")
   ]);setRows(employees);setContext(refs);}catch(e){setError(e.message);}finally{setLoading(false);}};
@@ -78,7 +81,7 @@ function EffectifRH({ user, api }) {
   const changeService=v=>{setService(v);setFonction("");setUnite("");};
   const newForm=()=>{setError("");setForm({matricule:"",nom:"",prenom:"",initiale:"",service:"",fonction:"",telephone:"",email:"",
     site:"",type_contrat:"",date_fin_contrat:"",date_recrutement:"",date_depart:"",
-    actif:true,is_admin:false,toutes_unites:false,units:[]});};
+    actif:admin,is_admin:false,toutes_unites:false,units:[],service:admin?"":(user.service||"")});};
   const editForm=r=>{setError("");setForm({...r,initiale:r.initiale||"",type_contrat:r.type_contrat||"",
     date_fin_contrat:iso(r.date_fin_contrat),date_recrutement:iso(r.date_recrutement),date_depart:iso(r.date_depart),
     actif:trueValue(r.actif),is_admin:trueValue(r.is_admin),toutes_unites:trueValue(r.toutes_unites),units:employeeUnits(r)});};
@@ -123,7 +126,7 @@ function EffectifRH({ user, api }) {
       <div className="ef-filter"><label><MapPin/> Localisation</label><select value={unite} onChange={e=>setUnite(e.target.value)}><option value="">Toutes les localisations</option>{unitOptions.map(v=><option key={v} value={v}>{localisationName(v,{withSite:true})}</option>)}</select></div>
       <div className="ef-filter"><label><Filter/> Statut</label><select value={status} onChange={e=>setStatus(e.target.value)}><option value="all">Tous les statuts</option><option value="active">Actifs</option><option value="inactive">Inactifs</option></select></div>
       <button className="ef-reset" onClick={reset}><RotateCcw/> Effacer</button>
-      {admin&&<button className="primary ef-add" onClick={newForm}><Plus/> Ajouter</button>}
+      {canCreate&&<button className="primary ef-add" onClick={newForm}><Plus/> Ajouter</button>}
     </section>
     {showRh&&<section className="ef-rhDashboard">
       <div className="ef-rhDashboardHead"><div><span className="ef-eyebrow">ANALYSE RH</span><h2>Évolution des effectifs</h2><p>Les sorties sont calculées à partir des dates de départ, jamais de la fin d’un CDD.</p></div>
@@ -169,30 +172,31 @@ function EffectifRH({ user, api }) {
           <div className="ef-metaRow"><span>Téléphone</span><strong>{row.telephone||"—"}</strong></div>
           <div className="ef-metaRow"><span>Email</span><strong>{row.email||"—"}</strong></div>
         </div>
-        {admin&&<div className="ef-personFoot"><button onClick={()=>editForm(row)}><Save/> Modifier</button></div>}
+        {canEdit&&<div className="ef-personFoot"><button onClick={()=>editForm(row)}><Save/> Modifier</button></div>}
       </article>;
     })}</section>:<div className="ef-empty"><Users/><strong>Aucun collaborateur ne correspond aux filtres.</strong><span>Modifie les critères ou efface les filtres.</span></div>)}
     {form&&<div className="modalBack" role="presentation"><form className="modal ef-rhModal" onSubmit={save}>
       <div className="modalHead"><div><span className="ef-eyebrow">FICHE PERSONNEL</span><h3>{form.id?"Modifier un collaborateur":"Ajouter un collaborateur"}</h3></div><button type="button" className="iconButton" onClick={()=>setForm(null)} aria-label="Fermer"><X/></button></div>
+      {!admin&&<p className="hint">Pour les comptes non administrateurs, la modification des fiches existantes est limitée à l’initiale et aux coordonnées. Les créations sont inactives jusqu’à validation par un administrateur.</p>}
       <div className="formGrid">
-        <label>Matricule *<input required value={form.matricule||""} onChange={e=>patch("matricule",e.target.value)}/></label>
-        <label>Nom *<input required value={form.nom||""} onChange={e=>patch("nom",e.target.value)}/></label>
-        <label>Prénom<input value={form.prenom||""} onChange={e=>patch("prenom",e.target.value)}/></label>
+        <label>Matricule *<input required disabled={!admin&&Boolean(form.id)} value={form.matricule||""} onChange={e=>patch("matricule",e.target.value)}/></label>
+        <label>Nom *<input required disabled={!admin&&Boolean(form.id)} value={form.nom||""} onChange={e=>patch("nom",e.target.value)}/></label>
+        <label>Prénom<input disabled={!admin&&Boolean(form.id)} value={form.prenom||""} onChange={e=>patch("prenom",e.target.value)}/></label>
         <label>Initiale <small>facultatif</small><input placeholder="Ex. MR" value={form.initiale||""} onChange={e=>patch("initiale",e.target.value)}/></label>
-        <label>Service *<select required value={form.service||""} onChange={e=>patch("service",e.target.value)}><option value="">Sélectionner</option>{unique([...context.services,form.service]).map(v=><option key={v}>{v}</option>)}</select></label>
-        <label>Fonction *<select required value={form.fonction||""} onChange={e=>patch("fonction",e.target.value)}><option value="">Sélectionner</option>{unique([...context.functions,form.fonction]).map(v=><option key={v}>{v}</option>)}</select></label>
-        <label>Type de contrat<select value={form.type_contrat||""} onChange={e=>setForm(old=>({...old,type_contrat:e.target.value,date_fin_contrat:e.target.value==="CDD"?old.date_fin_contrat:""}))}><option value="">Non renseigné</option><option>CDI</option><option>CDD</option></select></label>
-        <label>Fin de contrat {form.type_contrat==="CDD"?"*":""}<input type="date" required={form.type_contrat==="CDD"} disabled={form.type_contrat!=="CDD"} value={form.date_fin_contrat||""} onChange={e=>patch("date_fin_contrat",e.target.value)}/></label>
-        <label>Date de recrutement<input type="date" value={form.date_recrutement||""} onChange={e=>patch("date_recrutement",e.target.value)}/></label>
-        <label>Date de départ<input type="date" value={form.date_depart||""} onChange={e=>patch("date_depart",e.target.value)}/></label>
+        <label>Service *<select required disabled={!admin&&Boolean(form.id)} value={form.service||""} onChange={e=>patch("service",e.target.value)}><option value="">Sélectionner</option>{unique([...context.services,form.service]).map(v=><option key={v}>{v}</option>)}</select></label>
+        <label>Fonction *<select required disabled={!admin&&Boolean(form.id)} value={form.fonction||""} onChange={e=>patch("fonction",e.target.value)}><option value="">Sélectionner</option>{unique([...context.functions,form.fonction]).map(v=><option key={v}>{v}</option>)}</select></label>
+        <label>Type de contrat<select disabled={!admin&&Boolean(form.id)} value={form.type_contrat||""} onChange={e=>setForm(old=>({...old,type_contrat:e.target.value,date_fin_contrat:e.target.value==="CDD"?old.date_fin_contrat:""}))}><option value="">Non renseigné</option><option>CDI</option><option>CDD</option></select></label>
+        <label>Fin de contrat {form.type_contrat==="CDD"?"*":""}<input type="date" required={form.type_contrat==="CDD"} disabled={form.type_contrat!=="CDD"||(!admin&&Boolean(form.id))} value={form.date_fin_contrat||""} onChange={e=>patch("date_fin_contrat",e.target.value)}/></label>
+        <label>Date de recrutement<input type="date" disabled={!admin&&Boolean(form.id)} value={form.date_recrutement||""} onChange={e=>patch("date_recrutement",e.target.value)}/></label>
+        <label>Date de départ<input type="date" disabled={!admin&&Boolean(form.id)} value={form.date_depart||""} onChange={e=>patch("date_depart",e.target.value)}/></label>
         <label>Téléphone<input value={form.telephone||""} onChange={e=>patch("telephone",e.target.value)}/></label>
         <label>Email<input type="email" value={form.email||""} onChange={e=>patch("email",e.target.value)}/></label>
-        <label>Site<select value={explicitSite} disabled={selectedSites.length>0} onChange={e=>patch("site",e.target.value)}><option value="">Non renseigné</option>{SITES.map(s=><option key={s} value={s}>{s}</option>)}<option value="Site 01; Site 02">Les deux sites</option></select><small>Automatique si des localisations sont affectées.</small></label>
+        <label>Site<select value={explicitSite} disabled={selectedSites.length>0||(!admin&&Boolean(form.id))} onChange={e=>patch("site",e.target.value)}><option value="">Non renseigné</option>{SITES.map(s=><option key={s} value={s}>{s}</option>)}<option value="Site 01; Site 02">Les deux sites</option></select><small>Automatique si des localisations sont affectées.</small></label>
       </div>
-      <fieldset className="unitPicker"><legend>Affectations aux localisations</legend><label><input type="checkbox" checked={Boolean(form.toutes_unites)} onChange={e=>patch("toutes_unites",e.target.checked)}/> Toutes les localisations</label>
+      <fieldset className="unitPicker" disabled={!admin&&Boolean(form.id)}><legend>Affectations aux localisations</legend><label><input type="checkbox" checked={Boolean(form.toutes_unites)} onChange={e=>patch("toutes_unites",e.target.checked)}/> Toutes les localisations</label>
         {!form.toutes_unites&&<div className="unitGrid">{allUnitOptions.map(u=><label key={u}><input type="checkbox" checked={form.units.includes(u)} onChange={()=>toggleUnit(u)}/>{localisationName(u,{withSite:true})}</label>)}</div>}
       </fieldset>
-      <div className="formGrid"><label><input type="checkbox" checked={Boolean(form.actif)} onChange={e=>patch("actif",e.target.checked)}/> Actif</label><label><input type="checkbox" checked={Boolean(form.is_admin)} onChange={e=>patch("is_admin",e.target.checked)}/> Administrateur</label></div>
+      <div className="formGrid"><label><input type="checkbox" disabled={!admin} checked={Boolean(form.actif)} onChange={e=>patch("actif",e.target.checked)}/> Actif</label><label><input type="checkbox" disabled={!admin} checked={Boolean(form.is_admin)} onChange={e=>patch("is_admin",e.target.checked)}/> Administrateur</label></div>
       {error&&<div className="formError" role="alert">{error}</div>}
       <div className="modalActions"><button type="button" onClick={()=>setForm(null)}>Annuler</button><button className="primary" type="submit" disabled={saving}><Save/>{saving?"Enregistrement…":"Enregistrer"}</button></div>
     </form></div>}

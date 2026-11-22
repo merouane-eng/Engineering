@@ -12,8 +12,9 @@ import Effectif from "./EffectifRH.jsx";
 import StatsMaster from "./StatsMaster.jsx";
 import MachineForm from "./MachineForm.jsx";
 import {SITES, localisationSite, localisationLabel, localisationName, localisationsForSite} from "./locationModel.js";
-import {isAdmin,isLead,canManageMachines,canPlanPM,permittedModule} from "./accessPolicy.js";
+import {isAdmin,isLead,canManageMachines,canPlanPM,permittedModule,permissionAllowed} from "./accessPolicy.js";
 import DesktopSettings from "./DesktopSettings.jsx";
+import AccessPermissions from "./AccessPermissions.jsx";
 import AdminExcelBar from "./AdminExcelBar.jsx";
 import { useLanguage, LanguageSwitch } from "./i18n.jsx";
 
@@ -27,6 +28,7 @@ const modules = [
   ["liste", "Liste des pannes", ClipboardList],
   ["pm", "Maintenance préventive", CalendarClock],
   ["operating", "Operating Time", Gauge],
+  ["sop", "SOP", ClipboardCheck],
   ["stats", "Statistiques", Activity],
   ["parametres", "Paramètres", Settings]
 ];
@@ -56,6 +58,10 @@ const fieldsByModule = {
     ["machine", "Machine"], ["date_jour", "Date", "date"], ["heures_planifiees", "Heures planifiées", "number"],
     ["heures_marche", "Heures marche", "number"], ["heures_arret", "Heures arrêt", "number"], ["commentaire", "Commentaire"]
   ],
+  sop: [
+    ["code","Code"],["titre","Titre"],["version","Version"],["machine","Machine"],
+    ["unite","Localisation"],["date_application","Application","date"],["actif","Actif",true]
+  ],
   parametres: [
     ["type_liste", "Type"], ["valeur", "Valeur"], ["parent", "Parent"], ["ordre", "Ordre", "number"], ["actif", "Actif", true]
   ]
@@ -63,7 +69,7 @@ const fieldsByModule = {
 
 const tables = {
   machines: "machines", effectif: "techniciens", saisie: "pannes", liste: "pannes",
-  pm: "pm_programmees", operating: "operating_time", parametres: "ref_listes"
+  pm: "pm_programmees", operating: "operating_time", sop: "sop", parametres: "ref_listes"
 };
 
 async function api(path, options = {}) {
@@ -282,7 +288,7 @@ function MachinePage({ user }) {
       <article className="mm-kpi"><div className="mm-kpiTop"><span className="mm-kpiIcon"><Layers/></span><span className="eyebrow">ORGANISATION</span></div><strong>{loading?"—":unitCount}</strong><span>Localisations couvertes</span></article>
       <article className="mm-kpi"><div className="mm-kpiTop"><span className="mm-kpiIcon"><MapPin/></span><span className="eyebrow">LOCALISATION</span></div><strong>{loading?"—":areaCount}</strong><span>Areas / zones</span></article>
     </section>
-    <div className="mm-toolbar"><div className="mm-sectionTitle"><span className="eyebrow">EXPLORATEUR DU PARC</span><h2>Équipements</h2></div>{canManageMachines(user)&&<button className="primary" onClick={()=>setEditing({site:"Site 01",unite:"",departement:isAdmin(user)?"":(user.service||"")})}><Plus/> Ajouter une machine</button>}</div>
+    <div className="mm-toolbar"><div className="mm-sectionTitle"><span className="eyebrow">EXPLORATEUR DU PARC</span><h2>Équipements</h2></div>{permissionAllowed(user,"machines","create")&&<button className="primary" onClick={()=>setEditing({site:"Site 01",unite:"",departement:isAdmin(user)?"":(user.service||"")})}><Plus/> Ajouter une machine</button>}</div>
     <section className="mm-filters">
       <div className="mm-field mm-search"><label>RECHERCHE RAPIDE</label><input placeholder="Tag, désignation, marque…" value={query} onChange={e=>setQuery(e.target.value)}/></div>
       <div className="mm-field"><label>SITE</label><select value={site} onChange={e=>{setSite(e.target.value);setUnit("");setArea("");}}><option value="">Tous les sites</option>{SITES.map(v=><option key={v} value={v}>{v}</option>)}</select></div>
@@ -297,7 +303,7 @@ function MachinePage({ user }) {
         <div className="mm-machineTop"><span className="mm-tag">{row.tag||"SANS TAG"}</span><span className={active(row.actif)?"mm-status":"mm-status off"}><i/>{active(row.actif)?"En service":"Inactive"}</span></div>
         <h4>{row.designation||"Machine sans désignation"}</h4><div className="mm-machineMeta"><span><MapPin/>{row.site||localisationSite(row.unite)}</span><span><Layers/>{localisationLabel(row.unite)||"Localisation non définie"}</span><span><MapPin/>{row.zone||"Zone non définie"}</span><span><Users/>{row.departement||"Équipement partagé"}</span></div>
         {(row.marque||row.modele)&&<div className="mm-machineMeta"><span>{[row.marque,row.modele].filter(Boolean).join(" · ")}</span></div>}
-        {canManageMachines(user)&&<div className="mm-machineFoot"><button onClick={()=>setEditing(row)}>Modifier</button>{isAdmin(user)&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</div>}
+        {(permissionAllowed(user,"machines","edit")||isAdmin(user))&&<div className="mm-machineFoot">{permissionAllowed(user,"machines","edit")&&<button onClick={()=>setEditing(row)}>Modifier</button>}{isAdmin(user)&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</div>}
       </article>)}</div>:<div className="mm-empty"><Wrench/>Aucune machine ne correspond à ces filtres.</div>}
     </article><aside className="mm-sidePanel"><h3>Répartition par localisation</h3><p>Nombre d'équipements par localisation et site</p>
       {byUnit.length?byUnit.map(item=><div className="mm-unitRow" key={item.name}><div className="mm-unitLabel"><span>{item.name}</span><strong>{item.count}</strong></div><div className="mm-track"><i style={{width:(item.count/maxUnit*100)+"%"}}/></div></div>):<div className="mm-empty">Aucune donnée</div>}
@@ -342,8 +348,8 @@ function DataPage({ module, user }) {
       </section>
       <div className="bl-count"><span><strong>{filtered.length}</strong> panne(s) affichée(s) sur {rows.length}</span><span>Filtres cumulables · Données inchangées</span></div>
     </>}
-    {module!=="liste"&&<section className="toolbar"><div className="search"><Search/><input placeholder="Rechercher..." value={query} onChange={e=>setQuery(e.target.value)}/></div><button className="primary" onClick={()=>setEditing({})}><Plus/> Ajouter</button></section>}
-    <div className="tableWrap"><table><thead><tr>{defs.map(([key,label])=><th key={key}>{label}</th>)}<th/></tr></thead><tbody>{filtered.map(row=><tr key={row.id}>{defs.map(([key])=><td key={key} className={key==="technicien"?"bl-technician-cell":""}>{key==="actif"?(row[key]?"Oui":"Non"):key==="unite"?localisationName(row.unite,{withSite:true}):key==="technicien"?<span className="bl-tech"><i>{String(row[key]||"—").slice(0,1).toUpperCase()}</i>{row[key]||"—"}</span>:key==="wo"?<span className="bl-wo">{row[key]??"—"}</span>:row[key]??"—"}</td>)}<td className="actions">{(module!=="liste"||isLead(user)||row.peut_modifier===true)&&<button onClick={()=>setEditing(row)}>Modifier</button>}{module!=="liste"&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</td></tr>)}</tbody></table>{!filtered.length&&<div className="empty">Aucun résultat</div>}</div>
+    {module!=="liste"&&<section className="toolbar"><div className="search"><Search/><input placeholder="Rechercher..." value={query} onChange={e=>setQuery(e.target.value)}/></div>{permissionAllowed(user,module,"create")&&<button className="primary" onClick={()=>setEditing({})}><Plus/> Ajouter</button>}</section>}
+    <div className="tableWrap"><table><thead><tr>{defs.map(([key,label])=><th key={key}>{label}</th>)}<th/></tr></thead><tbody>{filtered.map(row=><tr key={row.id}>{defs.map(([key])=><td key={key} className={key==="technicien"?"bl-technician-cell":""}>{key==="actif"?(row[key]?"Oui":"Non"):key==="unite"?localisationName(row.unite,{withSite:true}):key==="technicien"?<span className="bl-tech"><i>{String(row[key]||"—").slice(0,1).toUpperCase()}</i>{row[key]||"—"}</span>:key==="wo"?<span className="bl-wo">{row[key]??"—"}</span>:row[key]??"—"}</td>)}<td className="actions">{permissionAllowed(user,module,"edit")&&(module!=="liste"||row.peut_modifier===true)&&<button onClick={()=>setEditing(row)}>Modifier</button>}{module!=="liste"&&isAdmin(user)&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</td></tr>)}</tbody></table>{!filtered.length&&<div className="empty">Aucun résultat</div>}</div>
     {editing&&<Editor fields={module==="liste"&&!isLead(user)?defs.filter(([key])=>["probleme","area","statut","commentaire","pieces_consommees"].includes(key)):defs} values={editing} onClose={()=>setEditing(null)} onSave={save}/>}
   </div>;
 }
@@ -439,7 +445,7 @@ function FailureEntry({ user }) {
       setDraft({ ...empty, unite: context.units[0] || "", technicien: context.technician, service: context.service });
     } catch (err) { setError(err.message); }
   };
-  return <div className="failureMaster">
+  return !permissionAllowed(user,"saisie","create")?<div className="formError">Vous pouvez consulter cette rubrique, mais la création de pannes est désactivée pour votre compte.</div>:<div className="failureMaster">
     <style>{`
       .failureMaster{color:#1b3150;padding-bottom:28px}.failureMaster .fm-hero{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:27px 30px;margin:4px 0 20px;border-radius:20px;color:white;background:linear-gradient(115deg,#102b54,#174b87 62%,#2874bd);box-shadow:0 12px 30px #163b681f}.failureMaster .fm-eyebrow{font-size:10px;font-weight:800;letter-spacing:1.6px;color:#b9d7ff}.failureMaster .fm-hero h1{font-size:26px;margin:9px 0 6px;color:white}.failureMaster .fm-hero p{margin:0;color:#d7e7fb;font-size:13px}.failureMaster .fm-heroIcon{width:62px;height:62px;display:grid;place-items:center;border:1px solid #ffffff38;border-radius:18px;background:#ffffff18}.failureMaster .fm-heroIcon svg{width:30px;height:30px}.failureMaster .fm-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:18px}.failureMaster .fm-step{display:flex;align-items:center;gap:9px;padding:11px;border:1px solid #e7edf5;border-radius:12px;background:#fff}.failureMaster .fm-step b{width:29px;height:29px;flex:0 0 29px;display:grid;place-items:center;border-radius:9px;background:#eaf2ff;color:#2461bd;font-size:11px}.failureMaster .fm-step strong{display:block;font-size:11px;color:#29405f}.failureMaster .fm-step small{display:block;margin-top:3px;font-size:9px;color:#8795a8}.failureMaster .failureForm{display:grid;gap:15px}.failureMaster .fm-card{padding:20px 22px;border:1px solid #e7edf5;border-radius:16px;background:white;box-shadow:0 5px 18px #183b640d}.failureMaster .fm-head{display:flex;align-items:center;gap:11px;margin-bottom:17px;padding-bottom:13px;border-bottom:1px solid #edf1f6}.failureMaster .fm-icon{width:37px;height:37px;display:grid;place-items:center;border-radius:11px;background:#edf4ff;color:#2866c5}.failureMaster .fm-icon svg{width:19px}.failureMaster .fm-head h3{margin:0;font-size:14px;color:#1d3557}.failureMaster .fm-head p{margin:3px 0 0;font-size:10px;color:#8492a6}.failureMaster .failureForm .formGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 17px}.failureMaster .failureForm label{display:flex;flex-direction:column;gap:7px;min-width:0;font-size:11px;font-weight:750;color:#435671}.failureMaster .failureForm label input,.failureMaster .failureForm label select,.failureMaster .failureForm label textarea{box-sizing:border-box;width:100%;min-width:0;border:1px solid #dfe6ef;border-radius:9px;background:#fbfcfe;color:#1e3554;padding:10px 11px;font:inherit;font-weight:500;font-size:12px;outline:none}.failureMaster .failureForm label input,.failureMaster .failureForm label select{height:40px}.failureMaster .failureForm label textarea{min-height:88px;resize:vertical}.failureMaster .failureForm label input:focus,.failureMaster .failureForm label select:focus,.failureMaster .failureForm label textarea:focus{border-color:#6b9ce8;background:#fff;box-shadow:0 0 0 3px #2f75dc16}.failureMaster .failureForm label input:disabled{background:#f1f4f8}.failureMaster .failureForm .fullField{grid-column:1/-1}.failureMaster .fm-hint{font-size:9px;color:#8795a8;font-weight:500}.failureMaster .fm-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}.failureMaster .fm-meta span{padding:7px 10px;border-radius:8px;background:#f3f7fd;color:#5a6d86;font-size:10px}.failureMaster .fm-meta b{color:#245da9}.failureMaster .failurePartsToolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.failureMaster .failurePartsToolbar p{margin:0;font-size:10px;color:#8290a4}.failureMaster .piecePicker{display:grid;grid-template-columns:2fr 1.2fr 1.2fr .7fr auto;gap:9px;align-items:end;padding:13px;border:1px solid #e8eef6;border-radius:12px;background:#f8faff}.failureMaster .piecePicker .secondary{height:40px;white-space:nowrap}.failureMaster .machineParts{margin-top:13px;padding:13px;border:1px solid #e8eef6;border-radius:11px;background:#fbfcff}.failureMaster .machineParts h4{margin:0 0 10px;font-size:11px;color:#344b69}.failureMaster .usedParts{display:grid;gap:7px;margin-top:11px}.failureMaster .usedParts>div{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;border:1px solid #e8edf4;border-radius:9px;background:#fff}.failureMaster .usedParts strong{font-size:11px;color:#304766}.failureMaster .usedParts span{font-size:10px;color:#8492a6}.failureMaster .fm-history{margin-top:13px;border:1px solid #e8edf4;border-radius:10px;overflow:auto}.failureMaster .fm-submit{position:sticky;bottom:10px;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 15px;border:1px solid #dfe8f5;border-radius:13px;background:#ffffffed;backdrop-filter:blur(10px);box-shadow:0 8px 25px #183b641c}.failureMaster .fm-submit span{font-size:10px;color:#7c8ba0}.failureMaster .fm-submit .primary{min-height:42px;padding:0 20px;border-radius:9px;font-weight:750}.failureMaster .fm-alert{margin-bottom:13px}@media(max-width:900px){.failureMaster .fm-steps{grid-template-columns:repeat(2,minmax(0,1fr))}.failureMaster .piecePicker{grid-template-columns:repeat(2,minmax(0,1fr))}.failureMaster .piecePicker>label:first-child{grid-column:1/-1}}@media(max-width:600px){.failureMaster .fm-hero{padding:21px 17px}.failureMaster .fm-hero h1{font-size:21px}.failureMaster .fm-heroIcon{width:48px;height:48px}.failureMaster .fm-step{padding:8px 7px;gap:6px}.failureMaster .fm-step small{display:none}.failureMaster .fm-card{padding:15px 12px}.failureMaster .failureForm .formGrid{grid-template-columns:1fr;gap:12px}.failureMaster .failureForm .fullField{grid-column:auto}.failureMaster .piecePicker{grid-template-columns:1fr}.failureMaster .piecePicker>label:first-child{grid-column:auto}.failureMaster .failurePartsToolbar,.failureMaster .fm-submit{align-items:stretch;flex-direction:column}.failureMaster .fm-submit .primary{width:100%;justify-content:center}}
     `}</style>
@@ -469,7 +475,7 @@ function FailureEntry({ user }) {
         <label>Statut<select value={draft.statut} onChange={e=>setDraft({...draft,statut:e.target.value})}>{[...new Set([...(context.statuses||["Open","Close"]),draft.statut].filter(Boolean))].map(s=><option key={s} value={s}>{s}</option>)}</select></label>
       </div><div className="fm-meta"><span>Durée calculée : <b>{downtime!==""?downtime+" min":"À déterminer"}</b></span><span>État : <b>{draft.statut==="Close"?"Clôturé":"Ouvert"}</b></span></div></section>
       <section className="fm-card"><div className="fm-head"><span className="fm-icon"><Wrench/></span><div><h3>Pièces de rechange</h3><p>Sélectionnez les pièces consommées ou ajoutez une nouvelle référence.</p></div></div>
-        <div className="failurePartsToolbar"><p>Les pièces ajoutées seront associées à cet ordre de travail.</p>{isLead(user)&&<button className="secondary" type="button" onClick={()=>setPieceFormOpen(true)}><Plus/> Nouvelle pièce au catalogue</button>}</div>
+        <div className="failurePartsToolbar"><p>Les pièces ajoutées seront associées à cet ordre de travail.</p>{permissionAllowed(user,"machines","edit")&&<button className="secondary" type="button" onClick={()=>setPieceFormOpen(true)}><Plus/> Nouvelle pièce au catalogue</button>}</div>
         <div className="piecePicker">
           <label>Catalogue de pièces<select value={pieceDraft.selected} onChange={e=>selectPiece(e.target.value)}><option value="">Saisir ou choisir une pièce...</option>{pieceContext.catalog.map(piece=><option key={piece.id} value={piece.id}>{piece.reference?piece.reference+" — ":""}{piece.nom}</option>)}</select></label>
           <label>Nom de la pièce<input value={pieceDraft.nom_piece} onChange={e=>setPieceDraft({...pieceDraft,nom_piece:e.target.value})} placeholder="Désignation"/></label>
@@ -477,7 +483,7 @@ function FailureEntry({ user }) {
           <label>Quantité<input type="number" min="1" value={pieceDraft.quantite} onChange={e=>setPieceDraft({...pieceDraft,quantite:e.target.value})}/></label>
           <button className="secondary" type="button" onClick={addPiece}><Plus/> Ajouter</button>
         </div>
-        {draft.machine&&<div className="machineParts"><h4>Référentiel de la machine — {draft.machine}</h4>{pieceContext.machineParts.length>0?<div className="usedParts">{pieceContext.machineParts.map(piece=><div key={piece.id}><strong>{piece.nom}</strong><span>{piece.reference||"Sans référence"}</span><button type="button" className="secondary" onClick={()=>setPieceDraft({selected:String(piece.id),nom_piece:piece.nom,reference_piece:piece.reference||"",quantite:1})}>Utiliser</button></div>)}</div>:<p className="hint">Aucune pièce référentielle associée à cette machine pour le moment.</p>}{isLead(user)&&pieceDraft.selected&&!pieceContext.machineParts.some(piece=>String(piece.id)===String(pieceDraft.selected))&&<button type="button" className="secondary" onClick={async()=>{try{await api("/api/pieces/"+pieceDraft.selected+"/machines",{method:"POST",body:JSON.stringify({machine:draft.machine})});const refreshed=await api("/api/pieces/context?machine="+encodeURIComponent(draft.machine));setPieceContext(refreshed);}catch(err){setError(err.message);}}}>Associer cette pièce au référentiel de la machine</button>}</div>}
+        {draft.machine&&<div className="machineParts"><h4>Référentiel de la machine — {draft.machine}</h4>{pieceContext.machineParts.length>0?<div className="usedParts">{pieceContext.machineParts.map(piece=><div key={piece.id}><strong>{piece.nom}</strong><span>{piece.reference||"Sans référence"}</span><button type="button" className="secondary" onClick={()=>setPieceDraft({selected:String(piece.id),nom_piece:piece.nom,reference_piece:piece.reference||"",quantite:1})}>Utiliser</button></div>)}</div>:<p className="hint">Aucune pièce référentielle associée à cette machine pour le moment.</p>}{permissionAllowed(user,"machines","edit")&&pieceDraft.selected&&!pieceContext.machineParts.some(piece=>String(piece.id)===String(pieceDraft.selected))&&<button type="button" className="secondary" onClick={async()=>{try{await api("/api/pieces/"+pieceDraft.selected+"/machines",{method:"POST",body:JSON.stringify({machine:draft.machine})});const refreshed=await api("/api/pieces/context?machine="+encodeURIComponent(draft.machine));setPieceContext(refreshed);}catch(err){setError(err.message);}}}>Associer cette pièce au référentiel de la machine</button>}</div>}
         {pieces.length>0?<div className="usedParts">{pieces.map((piece,index)=><div key={piece.reference_piece+"-"+index}><strong>{piece.nom_piece}</strong><span>{piece.reference_piece||"Sans référence"} · Qté {piece.quantite}</span><button type="button" className="dangerText" onClick={()=>setPieces(current=>current.filter((_,itemIndex)=>itemIndex!==index))}>Retirer</button></div>)}</div>:<div className="empty">Aucune pièce ajoutée à cet ordre de travail.</div>}
       </section>
       <section className="fm-card"><div className="fm-head"><span className="fm-icon"><ClipboardCheck/></span><div><h3>Historique des pièces utilisées</h3><p>Traçabilité des consommations précédentes pour cette machine.</p></div></div>
@@ -526,13 +532,14 @@ function AccessSettings({ user }) {
     <PageTitle title="Paramètres & accès" subtitle="Gestion des rôles et comptes" />
     <div className="tableWrap"><table><thead><tr><th>Nom</th><th>Utilisateur</th><th>Fonction</th><th>Rôle</th><th /></tr></thead><tbody>
       {users.map(row => {
-        const role = row.is_admin ? "admin" : /superviseur|supervisor/i.test(row.fonction || "") ? "superviseur" : "technicien";
+        const role = row.role || (row.is_admin ? "admin" : /superviseur|supervisor/i.test(row.fonction || "") ? "superviseur" : "technicien");
         return <tr key={row.id}><td>{row.nom} {row.prenom || ""}</td><td>{row.username}</td><td>{row.fonction}</td>
           <td><select value={role} disabled={row.id === user.id} onChange={e => changeRole(row.id, e.target.value)}>
             <option value="technicien">Technicien</option><option value="superviseur">Superviseur</option><option value="admin">Administrateur</option>
           </select></td><td><button onClick={() => changePassword(row.id)}>Mot de passe</button></td></tr>;
       })}
     </tbody></table></div>
+    <AccessPermissions api={api} />
     <DesktopSettings />
   </div>;
 }
@@ -740,7 +747,7 @@ function PreventiveMaintenance({ user }) {
           <td>{row.machine_tag} — {row.machine_designation || ""}</td><td>{row.frequence}</td>
           <td>{row.responsable || "—"}</td>
           <td>{user.role==="admin" ? <div className="pm-serviceAssign"><select aria-label={"Service de la PM "+row.id} value={serviceDrafts[row.id] ?? row.service_intervenant ?? ""} onChange={e=>setServiceDrafts(old=>({...old,[row.id]:e.target.value}))}><option value="">Non attribuée</option>{[...new Set([...servicesPM,row.service_intervenant].filter(Boolean))].map(s=><option key={s} value={s}>{s}</option>)}</select><button type="button" onClick={()=>assignService(row)} title="Enregistrer le service intervenant">Valider</button></div> : (row.attribution_requise?<span title="Affectation par un administrateur requise">Non attribuée · consultation seule</span>:(row.service_intervenant||"—"))}</td><td>{row.statut}</td>
-          <td className="actions">{row.statut === "Planifiée" && !row.consultation_seule &&
+          <td className="actions">{row.statut === "Planifiée" && !row.consultation_seule && permissionAllowed(user,"pm","edit") &&
             <button className="primary" onClick={() => openRealization(row)}>Réaliser</button>}{row.attribution_requise&&<small title="Un administrateur doit renseigner le service intervenant">Affectation requise</small>}</td>
         </tr>)}</tbody>
       </table>
@@ -818,8 +825,8 @@ function OperatingTime({ user }) {
     try {
       const hours = Number(draft.hours || 0);
       const minutes = Number(draft.minutes || 0);
-      await api("/api/operating", {
-        method: "POST",
+      await api(editing?.id?"/api/operating/"+editing.id:"/api/operating", {
+        method: editing?.id?"PUT":"POST",
         body: JSON.stringify({
           unite: draft.unite,
           machine: draft.machine,
@@ -840,6 +847,13 @@ function OperatingTime({ user }) {
     setDraft({ unite: context.units[0] || "", machine: "", date_jour: "", hours: 0, minutes: 0, commentaire: "" });
     setEditing(true);
   };
+  const editEntry=row=>{
+    const total=Math.max(0,Number(row.heures_marche||0));
+    const hours=Math.floor(total),minutes=Math.round((total-hours)*60);
+    setError("");setDraft({unite:machineUnits.get(row.machine)||"",machine:row.machine,
+      date_jour:row.date_jour,hours:hours+(minutes===60?1:0),minutes:minutes===60?0:minutes,
+      commentaire:row.commentaire||""});setEditing(row);
+  };
 
   return <div className="breakdownListMaster operationsMaster">
     <PageTitle title="Operating Time" subtitle={filtered.length + " / " + rows.length + " saisie(s)"} />
@@ -858,19 +872,19 @@ function OperatingTime({ user }) {
       <button className="bl-reset" onClick={resetFilters}><RotateCcw /> Réinitialiser</button>
     </section>
     <div className="bl-count"><span><strong>{filtered.length}</strong> saisie(s) sur {rows.length}</span><span>Indicateurs calculés sur la sélection</span></div>
-    <div className="operationsActions"><button className="primary" onClick={openEditor}><Plus /> Ajouter Operating Time</button></div>
+    <div className="operationsActions">{permissionAllowed(user,"operating","create")&&<button className="primary" onClick={openEditor}><Plus /> Ajouter Operating Time</button>}</div>
     <div className="tableWrap">
       <table><thead><tr><th>Date</th><th>Machine</th><th>Marche</th><th>Arrêt</th><th>Commentaire</th><th>Saisi par</th><th /></tr></thead>
-        <tbody>{filtered.map(row => <tr key={row.id}><td>{row.date_jour}</td><td>{row.machine}</td><td>{Number(row.heures_marche || 0).toFixed(2)} h</td><td>{Number(row.heures_arret || 0).toFixed(2)} h</td><td>{row.commentaire || "—"}</td><td>{row.saisi_par || "—"}</td><td /></tr>)}</tbody>
+        <tbody>{filtered.map(row => <tr key={row.id}><td>{row.date_jour}</td><td>{row.machine}</td><td>{Number(row.heures_marche || 0).toFixed(2)} h</td><td>{Number(row.heures_arret || 0).toFixed(2)} h</td><td>{row.commentaire || "—"}</td><td>{row.saisi_par || "—"}</td><td>{permissionAllowed(user,"operating","edit")&&<button type="button" onClick={()=>editEntry(row)}>Modifier</button>}</td></tr>)}</tbody>
       </table>
       {!filtered.length && <div className="empty">Aucune saisie Operating Time</div>}
     </div>
     {editing && <div className="modalBack"><form className="modal" onSubmit={save}>
-      <div className="modalHead"><h3>Ajouter Operating Time</h3><button type="button" className="iconButton" onClick={() => setEditing(null)}><X /></button></div>
+      <div className="modalHead"><h3>{editing?.id?"Modifier Operating Time":"Ajouter Operating Time"}</h3><button type="button" className="iconButton" onClick={() => setEditing(null)}><X /></button></div>
       <div className="formGrid">
-        <label>Localisation<select required value={draft.unite} onChange={e => setDraft({ ...draft, unite: e.target.value, machine: "" })}><option value="">Sélectionner...</option>{context.units.map(unit => <option key={unit} value={unit}>{localisationName(unit,{withSite:true})}</option>)}</select></label>
-        <label>Machine<select required value={draft.machine} onChange={e => setDraft({ ...draft, machine: e.target.value })}><option value="">Sélectionner...</option>{unitMachines.map(machine => <option key={machine.tag} value={machine.tag}>{machine.tag} — {machine.designation || ""}</option>)}</select></label>
-        <label>Date<input required type="date" value={draft.date_jour} onChange={e => setDraft({ ...draft, date_jour: e.target.value })} /></label>
+        <label>Localisation<select required disabled={Boolean(editing?.id)} value={draft.unite} onChange={e => setDraft({ ...draft, unite: e.target.value, machine: "" })}><option value="">Sélectionner...</option>{context.units.map(unit => <option key={unit} value={unit}>{localisationName(unit,{withSite:true})}</option>)}</select></label>
+        <label>Machine<select required disabled={Boolean(editing?.id)} value={draft.machine} onChange={e => setDraft({ ...draft, machine: e.target.value })}><option value="">Sélectionner...</option>{unitMachines.map(machine => <option key={machine.tag} value={machine.tag}>{machine.tag} — {machine.designation || ""}</option>)}</select></label>
+        <label>Date<input required type="date" disabled={Boolean(editing?.id)} value={draft.date_jour} onChange={e => setDraft({ ...draft, date_jour: e.target.value })} /></label>
         <label>Heures<input required type="number" min="0" max="24" value={draft.hours} onChange={e => setDraft({ ...draft, hours: e.target.value })} /></label>
         <label>Minutes<input required type="number" min="0" max="59" value={draft.minutes} onChange={e => setDraft({ ...draft, minutes: e.target.value })} /></label>
         <label>Nom / Saisi par<input value={context.operator} disabled /></label>
@@ -906,8 +920,8 @@ function App() {
   const logout = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch {} localStorage.removeItem("engineering_token"); localStorage.removeItem("engineering_user"); setUser(null); };
   if (!user) return <Login onLogin={login} language={language} setLanguage={setLanguage} />;
   const allowed = item => permittedModule(user,item);
-  const visibleModule=allowed(module)?module:"accueil";
-  const content = visibleModule === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : visibleModule === "stats" ? <StatsMaster theme={theme} onThemeChange={setTheme} language={language} /> : visibleModule === "machines" ? <MachinePage user={user} /> : visibleModule === "saisie" ? <FailureEntry user={user} /> : visibleModule === "pm" ? <PreventiveMaintenance user={user} /> : visibleModule === "operating" ? <OperatingTime user={user} /> : visibleModule === "effectif" ? <Effectif user={user} api={api} /> :
+  const visibleModule=allowed(module)?module:modules.find(([id])=>allowed(id))?.[0]||"";
+  const content = !visibleModule?<div className="formError">Aucun module autorisé pour ce compte. Contactez un administrateur.</div>:visibleModule === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : visibleModule === "stats" ? <StatsMaster theme={theme} onThemeChange={setTheme} language={language} /> : visibleModule === "machines" ? <MachinePage user={user} /> : visibleModule === "saisie" ? <FailureEntry user={user} /> : visibleModule === "pm" ? <PreventiveMaintenance user={user} /> : visibleModule === "operating" ? <OperatingTime user={user} /> : visibleModule === "effectif" ? <Effectif user={user} api={api} /> :
     visibleModule === "parametres" ? <AccessSettings user={user} /> : <DataPage key={visibleModule} module={visibleModule} user={user} />;
   return <div className="appShell">
     <aside id="engineering-sidebar" className={menuOpen ? "sidebar open" : "sidebar"}>

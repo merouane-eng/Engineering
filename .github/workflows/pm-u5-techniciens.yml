@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - preview/pm-techniciens-u5-lecture
+      - preview/gestion-acces-roles-personnes
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,7 +23,7 @@ jobs:
           npm run build
       - name: Tester les accès U5, les historiques PM et les autres droits
         run: |
-          node --test tests/pm-u5-techniciens.test.mjs tests/pm-historical-access.test.mjs tests/access-policy.test.mjs tests/access-routes.test.mjs tests/electrician_access.test.mjs tests/localisations.test.mjs tests/pagination.test.mjs tests/settings-admin.test.mjs tests/excel.test.mjs
+          node --test tests/permissions.test.mjs tests/pm-u5-techniciens.test.mjs tests/pm-historical-access.test.mjs tests/access-policy.test.mjs tests/access-routes.test.mjs tests/electrician_access.test.mjs tests/localisations.test.mjs tests/pagination.test.mjs tests/settings-admin.test.mjs tests/excel.test.mjs
       - name: Installer Chromium
         run: |
           npm install --no-save @playwright/test
