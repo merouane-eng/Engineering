@@ -9,7 +9,7 @@ export const EXCEL_MODULES = {
     title:"Machines",table:"machines",key:["tag"],
     fields:["tag","designation","site","unite","zone","marque","modele","numero_serie","date_mise_service","actif","commentaire"],
     required:["tag","designation","unite"],
-    help:["Une machine existante (même tag) est ignorée.","Site 01 ou Site 02. Actif : Oui ou Non.","Localisations Microbiologie et QC : code interne distinct par site (ex : QC__S02)."]
+    help:["Une machine existante (même TAG) est ignorée par défaut ; activer explicitement « Mettre à jour les TAG existants » pour actualiser les champs non vides.","Site 01 ou Site 02. Actif : Oui ou Non.","Localisations Microbiologie et QC : code interne distinct par site (ex : QC__S02)."]
   },
   effectif:{
     title:"Effectif",table:"effectif",key:["matricule"],
@@ -248,6 +248,7 @@ function filename(module,suffix){
   return "Engineering_"+module+"_"+suffix+"_"+day+".xlsx";
 }
 async function parseValidated(module,encoded,deps){
+  const updateMachines=module==="machines"&&deps.mode==="update-existing";
   if(typeof encoded!=="string"||encoded.length>4_200_000||!/^[a-z0-9+/=\r\n]+$/i.test(encoded))
     throw new Error("Fichier XLSX manquant ou trop volumineux.");
   const bytes=Buffer.from(encoded,"base64");
@@ -280,6 +281,21 @@ async function parseValidated(module,encoded,deps){
       for(const required of schema.required)if(!coerce(row[required]))throw new Error(required+" obligatoire.");
       const found=keys.get(key);
       const payload=normalizeForSave(module,row,context,found);
+      if(found && module==="machines" && updateMachines){
+        const site=coerce(row.site)||localisationSite(row.unite);
+        if(coerce(found.site)&&coerce(found.site)!==site)
+          throw new Error("Changement de site interdit en import : ancien "+found.site+", nouveau "+site+". Vérifier physiquement le TAG.");
+        const fields=["designation","site","unite","zone","marque","modele","numero_serie","date_mise_service","actif","commentaire"];
+        const patch={};
+        for(const f of fields){
+          if(!Object.prototype.hasOwnProperty.call(row,f)||row[f]===null||coerce(row[f])==="")continue;
+          const v=f==="actif"?bool(row[f],true)?1:0:row[f];
+          if(String(v)!==String(found[f]??""))patch[f]=v;
+        }
+        if(Object.keys(patch).length){updates++;actions.push({kind:"update-machine",id:found.id,values:patch,line});}
+        else duplicates++;
+        return;
+      }
       if(found && module!=="effectif"){duplicates++;return;}
       if(found && module==="effectif"){
         if(Object.keys(payload.update).length||payload.units!==null){updates++;actions.push({kind:"update",id:found.id,values:payload.update,units:payload.units,previousUnits:payload.previousUnits,line});}
@@ -327,7 +343,12 @@ export function registerExcelRoutes(app,{requireAuth,supabaseRequest,remoteEffec
     if(!EXCEL_MODULES[module]||!["preview","import"].includes(action))
       return res.status(404).json({error:"Module ou opération Excel introuvable."});
     try{
-      const preview=await parseValidated(module,req.body.file,{supabaseRequest,remoteEffectifWithUnits,user:req.user});
+      const mode=req.body.mode==="update-existing"?"update-existing":"insert-only";
+      if(req.body.mode && !["update-existing","insert-only"].includes(req.body.mode))
+        return res.status(400).json({error:"Mode d’import inconnu."});
+      if(mode==="update-existing"&&module!=="machines")
+        return res.status(400).json({error:"Mise à jour réservée au module Machines."});
+      const preview=await parseValidated(module,req.body.file,{supabaseRequest,remoteEffectifWithUnits,user:req.user,mode});
       if(action==="preview")return res.json(Object.fromEntries(Object.entries(preview).filter(([k])=>k!=="actions")));
       if(preview.errors.length)return res.status(422).json({error:"Corriger les erreurs indiquées avant import.",...Object.fromEntries(Object.entries(preview).filter(([k])=>k!=="actions"))});
       if(preview.hash!==req.body.hash)return res.status(409).json({error:"Le fichier a changé depuis la prévisualisation."});
@@ -343,6 +364,15 @@ export function registerExcelRoutes(app,{requireAuth,supabaseRequest,remoteEffec
       let imported=0,updated=0;const failures=[];
       for(const action of selected){
         try{
+          if(action.kind==="update-machine"){
+            if(module!=="machines")throw new Error("Mise à jour machine invalide.");
+            const result=await supabaseRequest("machines",{
+              method:"PATCH",query:"?id=eq."+encodeURIComponent(action.id)+"&select=id",
+              prefer:"return=representation",body:action.values
+            });
+            if(!result?.length)throw new Error("Équipement introuvable pendant la mise à jour.");
+            updated++;continue;
+          }
           if(action.kind==="update"){
             // Ajouter d'abord les nouvelles affectations ; ne jamais vider les anciennes
             // si un ajout Supabase échoue. Une relance peut reprendre les opérations.

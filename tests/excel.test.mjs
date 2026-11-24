@@ -314,3 +314,37 @@ test("Import RH : toutes les localisations inclut QC et Microbiologie sans crée
   assert.equal(h.data.effectif[0].role,"admin");
   assert.equal(h.data.effectif_unites.length,0);
 });
+
+test("Machines : mode mise à jour explicite, champs vides conservés, aucune insertion doublon",async()=>{
+ const h=createHarness();
+ h.data.machines[0].site="Site 01";
+ h.data.machines[0].modele="M-OLD";
+ const file=xlsx(["tag","designation","site","unite","modele","marque"],
+ [["M-1","Moteur QC","Site 01","QC__S01","",""]]);
+ const params={module:"machines",action:"preview"};
+ const p=await h.run("POST","/api/excel/:module/:action",{params,body:{file,mode:"update-existing"}});
+ assert.equal(p.statusCode,200,JSON.stringify(p.body));
+ assert.equal(p.body.updates,1);
+ assert.equal(p.body.creations,0);
+ assert.equal(h.writes.length,0);
+ const done=await h.run("POST","/api/excel/:module/:action",{
+   params:{module:"machines",action:"import"},body:{file,hash:p.body.hash,mode:"update-existing"}
+ });
+ assert.equal(done.statusCode,200,JSON.stringify(done.body));
+ assert.equal(done.body.updated,1);
+ assert.equal(h.data.machines[0].designation,"Moteur QC");
+ assert.equal(h.data.machines[0].unite,"QC__S01");
+ assert.equal(h.data.machines[0].modele,"M-OLD");
+ assert.equal(h.data.machines.length,1);
+});
+test("Machines : un TAG du Site 02 ne peut pas être déplacé vers Site 01 par Excel",async()=>{
+ const h=createHarness();h.data.machines[0].site="Site 02";h.data.machines[0].unite="U6";
+ const file=xlsx(["tag","designation","site","unite"],
+ [["M-1","Autre machine","Site 01","QC__S01"]]);
+ const p=await h.run("POST","/api/excel/:module/:action",{
+ params:{module:"machines",action:"preview"},body:{file,mode:"update-existing"}});
+ assert.equal(p.statusCode,200);
+ assert.equal(p.body.errors.length,1);
+ assert.match(p.body.errors[0].message,/Changement de site interdit/);
+ assert.equal(h.writes.length,0);
+});

@@ -33,10 +33,11 @@ export default function AdminExcelBar({module,onSuccess}){
   const [dataset,setDataset]=useState(FOR_MODULE[module]||"machines");
   const [busy,setBusy]=useState(""),[error,setError]=useState(""),[preview,setPreview]=useState(null),[report,setReport]=useState(null);
   const [importProgress,setImportProgress]=useState(0);
+  const [updateMachines,setUpdateMachines]=useState(false);
   const picker=useRef(null);
   useEffect(()=>{
     setDataset(FOR_MODULE[module]||"machines");
-    setPreview(null);setError("");setReport(null);
+    setPreview(null);setError("");setReport(null);setUpdateMachines(false);
   },[module]);
   const token=()=>localStorage.getItem("engineering_token");
   const download=async action=>{
@@ -68,7 +69,7 @@ export default function AdminExcelBar({module,onSuccess}){
     if(file.size>3*1024*1024){setError("Le fichier dépasse 3 Mo. Découper les données en plusieurs fichiers.");return;}
     setBusy("preview");
     try{
-      const data=await send("preview",file);
+      const data=await send("preview",file,null,dataset==="machines"&&updateMachines?{mode:"update-existing"}:{});
       setPreview({...data,file});
     }catch(e){setError(e.message);}finally{setBusy("");}
   };
@@ -82,7 +83,7 @@ export default function AdminExcelBar({module,onSuccess}){
       const encoded=await fileBase64(preview.file);
       for(let start=0;start<preview.total;start+=IMPORT_BATCH_SIZE){
         const size=Math.min(IMPORT_BATCH_SIZE,preview.total-start);
-        const data=await send("import",preview.file,preview.hash,{batchStart:start,batchSize:size},encoded);
+        const data=await send("import",preview.file,preview.hash,{batchStart:start,batchSize:size,...(dataset==="machines"&&updateMachines?{mode:"update-existing"}:{})},encoded);
         imported+=data.imported||0;
         updated+=data.updated||0;
         errors.push(...(data.errors||[]));
@@ -107,7 +108,7 @@ export default function AdminExcelBar({module,onSuccess}){
       <span className="adminExcelBadge"><ShieldCheck size={15}/> ADMIN</span>
       <div className="adminExcelTitle"><FileSpreadsheet size={19}/><div><strong>Gestion Excel</strong><small>Import, export et modèle compatibles avec Engineering PC</small></div></div>
       <div className="adminExcelSelector"><label htmlFor="excelDataset">Module</label><select id="excelDataset" value={dataset} disabled={Boolean(busy)}
-        onChange={e=>{setDataset(e.target.value);setPreview(null);setReport(null);setError("");}}>
+        onChange={e=>{setDataset(e.target.value);setUpdateMachines(false);setPreview(null);setReport(null);setError("");}}>
         {DATASETS.map(x=><option value={x.id} key={x.id}>{x.label}</option>)}
       </select></div>
     </div>
@@ -115,6 +116,12 @@ export default function AdminExcelBar({module,onSuccess}){
       <button type="button" disabled={Boolean(busy)} className="adminExcelButton" onClick={()=>download("template")}><FileDown size={16}/> Template</button>
       <button type="button" disabled={Boolean(busy)} className="adminExcelButton" onClick={()=>download("export")}><Download size={16}/> Exporter</button>
       <button type="button" disabled={Boolean(busy)} className="adminExcelButton accent" onClick={()=>picker.current?.click()}><Upload size={16}/> Importer</button>
+      {dataset==="machines"&&<label className="adminExcelUpdateMode" style={{display:"flex",alignItems:"center",gap:8,fontSize:13}}>
+        <input type="checkbox" checked={updateMachines} disabled={Boolean(busy)} onChange={e=>{
+          setUpdateMachines(e.target.checked);setPreview(null);setReport(null);setError("");
+        }}/>
+        Mettre à jour les TAG existants (champs non vides uniquement)
+      </label>}
       <input ref={picker} hidden type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={selectFile}/>
       {busy&&<span className="adminExcelLoading">{busy==="preview"?"Analyse du fichier…":busy==="import"?"Import en cours… "+importProgress+" / "+(preview?.total||0)+" lignes":"Préparation Excel…"}</span>}
     </div>
@@ -126,12 +133,12 @@ export default function AdminExcelBar({module,onSuccess}){
       <div className="adminExcelNumbers">
         <span><strong>{preview.total}</strong> ligne(s)</span>
         <span><strong>{preview.creations}</strong> nouvelle(s)</span>
-        <span><strong>{preview.updates}</strong> mise(s) à jour RH</span>
+        <span><strong>{preview.updates}</strong> mise(s) à jour {dataset==="machines"?"machines":"RH"}</span>
         <span><strong>{preview.duplicates}</strong> doublon(s) ignoré(s)</span>
       </div>
       {preview.errors?.length>0?<div className="adminExcelErrors"><AlertTriangle size={16}/> {preview.errors.length} erreur(s). Corrige le fichier :
         <ul>{preview.errors.slice(0,12).map((e,i)=><li key={i}>Ligne {e.line} : {e.message}</li>)}</ul></div>:
-        <div className="adminExcelConfirm"><span><CheckCircle2 size={17}/> Fichier vérifié. L'import n'effacera aucune ligne existante.</span>
+        <div className="adminExcelConfirm"><span><CheckCircle2 size={17}/> Fichier vérifié. Les mises à jour ne modifient que les champs renseignés et n’effacent aucune ligne existante.</span>
           <button type="button" disabled={Boolean(busy)||preview.creations+preview.updates===0}
             onClick={confirmImport}>Confirmer l'import</button></div>}
     </div>}
@@ -139,7 +146,7 @@ export default function AdminExcelBar({module,onSuccess}){
     {report&&<div className={report.ok?"adminExcelReport":"adminExcelErrors"} role="status">
       {report.ok?<CheckCircle2 size={16}/>:<AlertTriangle size={16}/>}
       {report.message}
-      {report.imported!==undefined&&<span>Ajoutées : {report.imported} · RH actualisés : {report.updated} · Doublons : {report.duplicates}</span>}
+      {report.imported!==undefined&&<span>Ajoutées : {report.imported} · Actualisées : {report.updated} · Doublons : {report.duplicates}</span>}
       {report.errors?.length>0&&<ul>{report.errors.slice(0,12).map((e,i)=><li key={i}>Ligne {e.line} : {e.message}</li>)}</ul>}
     </div>}
   </section>;
