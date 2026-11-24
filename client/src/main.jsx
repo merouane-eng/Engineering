@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 import Effectif from "./EffectifRH.jsx";
+import {isClosedPanne,isOpenPanne,panneStatusLabel,canonicalPanneStatus} from "./panneStatus.js";
 import StatsMaster from "./StatsMaster.jsx";
 import MachineForm from "./MachineForm.jsx";
 import {SITES, localisationSite, localisationLabel, localisationName, localisationsForSite} from "./locationModel.js";
@@ -164,7 +165,7 @@ function Dashboard({ user, onNavigate }) {
     <section className="dashboardKpis">{cards.map(([label,value,Icon,tone,note])=><article className="dashboardKpi" key={label}><div className="dashboardKpiTop"><span className={"dashboardKpiIcon "+tone}><Icon/></span><span className="dashboardKpiArrow"><ArrowUpRight/></span></div><strong>{loading&&!data?"—":value??0}</strong><span className="dashboardKpiLabel">{label}</span><small>{note}</small></article>)}</section>
     <section className="dashboardLower">
       <article className="dashboardPanel"><div className="dashboardPanelHead"><div><span className="eyebrow">SUIVI OPÉRATIONNEL</span><h3>Dernières pannes</h3></div><button onClick={()=>onNavigate("liste")}>Tout voir <ArrowUpRight/></button></div>
-      {data?.recentPannes?.length?<div className="dashboardRows">{data.recentPannes.map((row,index)=><div className="dashboardRow" key={row.id||row.wo||index}><span className={row.statut==="Close"?"rowStatus closed":"rowStatus open"}>{row.statut==="Close"?<CheckCircle2/>:<CircleAlert/>}</span><div className="dashboardRowMain"><strong>{row.machine||"Machine non précisée"}</strong><span>{row.wo?"WO "+row.wo+" · ":""}{row.probleme||"Intervention de maintenance"}</span></div><div className="dashboardRowMeta"><span>{formatDate(row.date_panne)}</span><small>{localisationName(row.unite,{withSite:true})}</small></div></div>)}</div>:<div className="dashboardEmpty"><ClipboardList/><strong>Aucune panne récente à afficher</strong><span>Les nouvelles déclarations apparaîtront ici.</span></div>}</article>
+      {data?.recentPannes?.length?<div className="dashboardRows">{data.recentPannes.map((row,index)=><div className="dashboardRow" key={row.id||row.wo||index}><span className={isClosedPanne(row.statut)?"rowStatus closed":"rowStatus open"}>{isClosedPanne(row.statut)?<CheckCircle2/>:<CircleAlert/>}</span><div className="dashboardRowMain"><strong>{row.machine||"Machine non précisée"}</strong><span>{row.wo?"WO "+row.wo+" · ":""}{row.probleme||"Intervention de maintenance"}</span></div><div className="dashboardRowMeta"><span>{formatDate(row.date_panne)}</span><small>{localisationName(row.unite,{withSite:true})}</small></div></div>)}</div>:<div className="dashboardEmpty"><ClipboardList/><strong>Aucune panne récente à afficher</strong><span>Les nouvelles déclarations apparaîtront ici.</span></div>}</article>
       <article className="dashboardPanel"><div className="dashboardPanelHead"><div><span className="eyebrow">ANTICIPER LES ARRÊTS</span><h3>Maintenance préventive</h3></div><button onClick={()=>onNavigate("pm")}>Planning <ArrowUpRight/></button></div>
       {data?.upcomingPM?.length?<div className="dashboardRows">{data.upcomingPM.map((row,index)=><div className="dashboardRow" key={row.id||row.machine_tag||index}><span className="pmDate"><strong>{new Date(row.date_prevue+"T00:00:00").getDate()}</strong><small>{new Intl.DateTimeFormat(languageForUI(),{month:"short"}).format(new Date(row.date_prevue+"T00:00:00"))}</small></span><div className="dashboardRowMain"><strong>{row.machine_tag||"Machine"}</strong><span>{row.frequence||"Maintenance préventive"} · {localisationName(row.unite,{withSite:true})}</span></div><span className="pmBadge">{row.statut||"Planifiée"}</span></div>)}</div>:<div className="dashboardEmpty"><CalendarClock/><strong>Aucune PM à venir</strong><span>Le planning préventif est à jour.</span></div>}</article>
     </section>
@@ -200,8 +201,8 @@ function StatsAncien() {
   const pannes=dataset.pannes.filter(row=>inUnit(row)&&inPeriod(row.date_panne));
   const pm=dataset.pm.filter(row=>inUnit(row)&&inPeriod(row.date_prevue));
   const operating=dataset.operating.filter(row=>inPeriod(row.date_jour)&&dataset.machines.some(machine=>machine.tag===row.machine&&dataset.units.includes(machine.unite)&&(unit==="Toutes les localisations"||machine.unite===unit)));
-  const open=pannes.filter(row=>String(row.statut||"").toLowerCase()!=="close");
-  const closed=pannes.filter(row=>String(row.statut||"").toLowerCase()==="close");
+  const open=pannes.filter(row=>isOpenPanne(row.statut));
+  const closed=pannes.filter(row=>isClosedPanne(row.statut));
   const realized=["réalisée","realisee","non conforme"];
   const completedPM=pm.filter(row=>realized.includes(String(row.statut||"").toLowerCase()));
   const overduePM=dataset.pm.filter(row=>inUnit(row)&&dateOf(row.date_prevue)&&dateOf(row.date_prevue)<new Date(todayKey+"T00:00:00")&&!realized.includes(String(row.statut||"").toLowerCase()));
@@ -328,8 +329,7 @@ function DataPage({ module, user }) {
   const title=modules.find(item=>item[0]===module)?.[1]||module;
   const unique=values=>[...new Set(values.filter(value=>value&&String(value).trim()).map(value=>String(value).trim()))].sort((a,b)=>a.localeCompare(b,"fr"));
   const units=unique([...(context.units||[]),...rows.map(r=>r.unite)]), departments=unique([...(context.services||[]),...rows.map(r=>r.service)]), areas=unique([...(context.zones||[]),...rows.map(r=>r.area||r.zone)]), technicians=unique([...(context.technicians||[]).map(t=>typeof t==="string"?t:t.name),...rows.map(r=>r.technicien)]);
-  const isOpen=value=>["open","opened","ouvert","ouverte","en cours","pending"].includes(String(value||"").toLowerCase());
-  const openCount=rows.filter(r=>isOpen(r.statut)).length, closedCount=rows.length-openCount, currentMonth=new Date().toISOString().slice(0,7), monthCount=rows.filter(r=>String(r.date_panne||"").slice(0,7)===currentMonth).length;
+  const openCount=rows.filter(r=>isOpenPanne(r.statut)).length, closedCount=rows.length-openCount, currentMonth=new Date().toISOString().slice(0,7), monthCount=rows.filter(r=>String(r.date_panne||"").slice(0,7)===currentMonth).length;
   const reset=()=>{setQuery("");setUnitFilter("");setDepartmentFilter("");setAreaFilter("");setTechnicianFilter("");setMonthFilter("");};
   return <div className={module==="liste"?"breakdownListMaster":""}>
     <PageTitle title={title} subtitle={filtered.length+" / "+rows.length+" enregistrement(s)"} />
@@ -351,7 +351,7 @@ function DataPage({ module, user }) {
       <div className="bl-count"><span><strong>{filtered.length}</strong> panne(s) affichée(s) sur {rows.length}</span><span>Filtres cumulables · Données inchangées</span></div>
     </>}
     {module!=="liste"&&<section className="toolbar"><div className="search"><Search/><input placeholder="Rechercher..." value={query} onChange={e=>setQuery(e.target.value)}/></div>{permissionAllowed(user,module,"create")&&<button className="primary" onClick={()=>setEditing({})}><Plus/> Ajouter</button>}</section>}
-    <div className="tableWrap"><table><thead><tr>{defs.map(([key,label])=><th key={key}>{label}</th>)}<th/></tr></thead><tbody>{filtered.map(row=><tr key={row.id}>{defs.map(([key])=><td key={key} className={key==="technicien"?"bl-technician-cell":""}>{key==="actif"?(row[key]?"Oui":"Non"):key==="unite"?localisationName(row.unite,{withSite:true}):key==="technicien"?<span className="bl-tech"><i>{String(row[key]||"—").slice(0,1).toUpperCase()}</i>{row[key]||"—"}</span>:key==="wo"?<span className="bl-wo">{row[key]??"—"}</span>:row[key]??"—"}</td>)}<td className="actions">{permissionAllowed(user,module,"edit")&&(module!=="liste"||row.peut_modifier===true)&&<button onClick={()=>setEditing(row)}>Modifier</button>}{module!=="liste"&&isAdmin(user)&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</td></tr>)}</tbody></table>{!filtered.length&&<div className="empty">Aucun résultat</div>}</div>
+    <div className="tableWrap"><table><thead><tr>{defs.map(([key,label])=><th key={key}>{label}</th>)}<th/></tr></thead><tbody>{filtered.map(row=><tr key={row.id}>{defs.map(([key])=><td key={key} className={key==="technicien"?"bl-technician-cell":""}>{key==="actif"?(row[key]?"Oui":"Non"):key==="unite"?localisationName(row.unite,{withSite:true}):key==="technicien"?<span className="bl-tech"><i>{String(row[key]||"—").slice(0,1).toUpperCase()}</i>{row[key]||"—"}</span>:key==="wo"?<span className="bl-wo">{row[key]??"—"}</span>:key==="statut"&&module==="liste"?panneStatusLabel(row.statut,languageForUI()):row[key]??"—"}</td>)}<td className="actions">{permissionAllowed(user,module,"edit")&&(module!=="liste"||row.peut_modifier===true)&&<button onClick={()=>setEditing(row)}>Modifier</button>}{module!=="liste"&&isAdmin(user)&&<button className="dangerText" onClick={()=>remove(row.id)}>Supprimer</button>}</td></tr>)}</tbody></table>{!filtered.length&&<div className="empty">Aucun résultat</div>}</div>
     {editing&&<Editor fields={module==="liste"&&!isLead(user)?defs.filter(([key])=>["probleme","area","statut","commentaire","pieces_consommees"].includes(key)):defs} values={editing} onClose={()=>setEditing(null)} onSave={save}/>}
   </div>;
 }
@@ -474,8 +474,8 @@ function FailureEntry({ user }) {
         <label>Début de l'intervention<input required type="datetime-local" value={draft.date_debut||""} onChange={e=>setDraft({...draft,date_debut:e.target.value})}/></label>
         <label>Fin de l'intervention<input required type="datetime-local" value={draft.date_fin||""} onChange={e=>setDraft({...draft,date_fin:e.target.value})}/></label>
         <label>Downtime <span className="fm-hint">Calcul automatique en minutes</span><input type="number" min="0" readOnly value={draft.downtime||downtime} placeholder="Calcul automatique"/></label>
-        <label>Statut<select value={draft.statut} onChange={e=>setDraft({...draft,statut:e.target.value})}>{[...new Set([...(context.statuses||["Open","Close"]),draft.statut].filter(Boolean))].map(s=><option key={s} value={s}>{s}</option>)}</select></label>
-      </div><div className="fm-meta"><span>Durée calculée : <b>{downtime!==""?downtime+" min":"À déterminer"}</b></span><span>État : <b>{draft.statut==="Close"?"Clôturé":"Ouvert"}</b></span></div></section>
+        <label>Statut<select value={canonicalPanneStatus(draft.statut)} onChange={e=>setDraft({...draft,statut:e.target.value})}>{[...new Set([...(context.statuses||["Open","Close"]),draft.statut].filter(Boolean).map(canonicalPanneStatus))].map(s=><option key={s} value={s}>{panneStatusLabel(s,languageForUI())}</option>)}</select></label>
+      </div><div className="fm-meta"><span>Durée calculée : <b>{downtime!==""?downtime+" min":"À déterminer"}</b></span><span>État : <b>{panneStatusLabel(draft.statut,languageForUI())}</b></span></div></section>
       <section className="fm-card"><div className="fm-head"><span className="fm-icon"><Wrench/></span><div><h3>Pièces de rechange</h3><p>Sélectionnez les pièces consommées ou ajoutez une nouvelle référence.</p></div></div>
         <div className="failurePartsToolbar"><p>Les pièces ajoutées seront associées à cet ordre de travail.</p>{permissionAllowed(user,"machines","edit")&&<button className="secondary" type="button" onClick={()=>setPieceFormOpen(true)}><Plus/> Nouvelle pièce au catalogue</button>}</div>
         <div className="piecePicker">

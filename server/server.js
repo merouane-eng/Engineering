@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { registerExcelRoutes } from "./bulkExcel.js";
 import { readAllSupabase } from "./paginatedSupabase.js";
+import {isClosedPanne,canonicalPanneStatus} from "../client/src/panneStatus.js";
 import { localisationSite, SITES, LOCALISATION_CODES } from "../client/src/locationModel.js";
 import {isAdmin,isLead,permittedModule,permissionAllowed,sameDepartment,machineInDepartment,panneInDepartment,pmInDepartment,employeeOwnsPanne,panneEditable,nameAccess} from "../client/src/accessPolicy.js";
 import {createAccessManager} from "./accessSettings.js";
@@ -1153,8 +1154,8 @@ app.get("/api/dashboard",requireAuth,requireModule("accueil"),async(req,res)=>{
     return res.json({
       machines:allowedMachines.length,
       techniciens:employees.filter(row=>row.actif===true).length,
-      pannesOuvertes:pannes.filter(row=>row.statut!=="Close").length,
-      pannesFermees:pannes.filter(row=>row.statut==="Close"&&String(row.date_panne||"").startsWith(month)).length,
+      pannesOuvertes:pannes.filter(row=>!isClosedPanne(row.statut)).length,
+      pannesFermees:pannes.filter(row=>isClosedPanne(row.statut)&&String(row.date_panne||"").startsWith(month)).length,
       pmProgrammee:pm.filter(row=>!realized.includes(row.statut)&&(String(row.date_prevue||"").startsWith(month)||String(row.date_prevue||"")<month+"-01")).length,
       pmRealisees:pm.filter(row=>realized.includes(row.statut)&&String(row.date_prevue||"").startsWith(month)).length,
       recentPannes:pannes.slice().sort((a,b)=>String(b.date_panne||"").localeCompare(String(a.date_panne||""))).slice(0,6),
@@ -1603,7 +1604,7 @@ app.post("/api/pannes", requireAuth, requirePermission("saisie","create"), async
       service: req.user.role === "admin" ? body.service : (req.user.service || ""),
       mois: monthNames[Number(panneDate.date.slice(5,7))-1] || "",
       technicien: req.user.role === "admin" ? body.technicien : [req.user.nom,req.user.prenom].filter(Boolean).join(" "),
-      downtime: Number(body.downtime || 0), statut: body.statut,
+      downtime: Number(body.downtime || 0), statut: canonicalPanneStatus(body.statut),
       commentaire: body.commentaire,
       pieces_consommees: selectedParts.map(piece => `${piece.reference_piece ? piece.reference_piece+" — " : ""}${piece.nom_piece} (x${Math.max(1,Number(piece.quantite||1))})`).join("; ") || null,
       date_creation: localTimestamp(), source: "web"
@@ -1677,6 +1678,7 @@ app.put("/api/tables/pannes/:id",requireAuth,requirePermission("liste","edit"),a
       ["date_debut","date_fin","probleme","area","downtime","statut","commentaire","pieces_consommees"];
     const payload=Object.fromEntries(Object.entries(req.body).filter(([k])=>fields.includes(k)));
     if(!Object.keys(payload).length)return res.status(400).json({error:"Aucun champ modifiable fourni."});
+    if(Object.prototype.hasOwnProperty.call(payload,"statut"))payload.statut=canonicalPanneStatus(payload.statut);
     payload.date_modification=localTimestamp();
     const rows=await supabaseRequest("pannes",{method:"PATCH",query:"?id=eq."+encodeURIComponent(req.params.id)+"&select=*",prefer:"return=representation",body:payload});
     return res.json({...rows[0],peut_modifier:true});
