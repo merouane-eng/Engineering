@@ -7,7 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { registerExcelRoutes } from "./bulkExcel.js";
 import { readAllSupabase } from "./paginatedSupabase.js";
-import { localisationSite, SITES } from "../client/src/locationModel.js";
+import { localisationSite, SITES, LOCALISATION_CODES } from "../client/src/locationModel.js";
 import {isAdmin,isLead,permittedModule,permissionAllowed,sameDepartment,machineInDepartment,panneInDepartment,pmInDepartment,employeeOwnsPanne,panneEditable,nameAccess} from "../client/src/accessPolicy.js";
 import {createAccessManager} from "./accessSettings.js";
 import {pmVisibility} from "../client/src/pmVisibility.js";
@@ -641,10 +641,16 @@ function machineFieldsFromBody(body, includeCreation = false) {
 
 
 async function allowedUnitsForUser(user){
-  if(isAdmin(user)){
-    const machines=await supabaseReadAll("machines","?select=id,unite&order=id.asc");
-    const refs=await supabaseRequest("effectif_unites",{query:"?select=effectif_id,unite"});
-    return [...new Set([...machines,...refs].map(row=>row.unite).filter(Boolean))].sort();
+  if(isAdmin(user)||user?.toutes_unites){
+    // Un droit global inclut aussi les localisations sans machine (QC et Microbiologie).
+    // Les codes ajoutés au référentiel sont accessibles sans affectation individuelle.
+    const [machines,refs]=await Promise.all([
+      supabaseReadAll("machines","?select=id,unite,site&order=id.asc"),
+      supabaseRequest("effectif_unites",{query:"?select=effectif_id,unite"})
+    ]);
+    const sites=isAdmin(user)?SITES:SITES.filter(site=>String(user.site||"").includes(site));
+    return [...new Set([...machines,...refs,...LOCALISATION_CODES].map(row=>row.unite||row.code).filter(Boolean)
+      .filter(code=>!sites.length||sites.includes(localisationSite(code))))].sort();
   }
   const id=user?.supabase_id||user?.id;
   if(!id)return [];
@@ -657,14 +663,6 @@ async function allowedUnitsForUser(user){
     assigned=dbAll("SELECT unite FROM technicien_unites WHERE id_technicien=? ORDER BY unite",[id]);
   }
   let units=[...new Set(assigned.map(row=>row.unite).filter(Boolean))];
-  // 'toutes_unites' does not bypass the user's site or department.
-  if(user.toutes_unites){
-    const sites=SITES.filter(site=>String(user.site||"").includes(site));
-    if(sites.length){
-      const machines=await supabaseReadAll("machines","?select=id,unite,site&order=id.asc");
-      units.push(...machines.filter(m=>sites.includes(m.site||localisationSite(m.unite))).map(m=>m.unite));
-    }
-  }
   const sites=SITES.filter(site=>String(user.site||"").includes(site));
   if(sites.length)units=units.filter(loc=>sites.includes(localisationSite(loc)));
   return [...new Set(units)].sort();
@@ -673,7 +671,7 @@ async function allowedUnitsForUser(user){
 async function visibleMachineRows(user){
   const units=new Set(await allowedUnitsForUser(user));
   const rows=await supabaseReadAll("machines","?select=*&order=tag.asc,id.asc");
-  return rows.filter(row=>isAdmin(user)||(units.has(row.unite)&&machineInDepartment(user,row)));
+  return rows.filter(row=>isAdmin(user)||(units.has(row.unite)&&(String(user.service||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="electricite"||machineInDepartment(user,row))));
 }
 
 async function visibleEmployees(user){
@@ -1312,7 +1310,7 @@ app.get("/api/effectif/context", requireAuth, requireModule("effectif"), async (
     ]);
     const scoped=isAdmin(req.user)?employees:employees.filter(row=>sameDepartment(req.user,row.service));
     res.json({
-      units: isAdmin(req.user)?[...new Set([...machines.map(row => row.unite),...references.filter(r=>r.type_liste==="unite"&&r.actif).map(r=>r.valeur),"SG01","SG02"].filter(Boolean))].sort():await allowedUnitsForUser(req.user),
+      units: isAdmin(req.user)?[...new Set([...machines.map(row => row.unite),...references.filter(r=>r.type_liste==="unite"&&r.actif).map(r=>r.valeur),...LOCALISATION_CODES.map(r=>r.code),"SG01","SG02"].filter(Boolean))].sort():await allowedUnitsForUser(req.user),
       services: [...new Set([...(!isAdmin(req.user)?[]:references.filter(r=>r.type_liste==="service"&&r.actif).map(r=>r.valeur)),...scoped.map(row => row.service)].filter(Boolean))].sort(),
       functions: [...new Set([...(!isAdmin(req.user)?[]:references.filter(r=>r.type_liste==="fonction"&&r.actif).map(r=>r.valeur)),...scoped.map(row => row.fonction)].filter(Boolean))].sort()
     });

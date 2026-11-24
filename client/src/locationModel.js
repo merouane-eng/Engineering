@@ -6,7 +6,13 @@ export const LOCALISATION_CODES=[
  {code:"MICROBIOLOGIE__S01",label:"Microbiologie",site:"Site 01"},
  {code:"MICROBIOLOGIE__S02",label:"Microbiologie",site:"Site 02"},
  {code:"QC__S01",label:"QC",site:"Site 01"},
- {code:"QC__S02",label:"QC",site:"Site 02"}
+ {code:"QC__S02",label:"QC",site:"Site 02"},
+ {code:"TRAITEMENT_EAU__S01",label:"Traitement d’eau",site:"Site 01"},
+ {code:"TRAITEMENT_EAU__S02",label:"Traitement d’eau",site:"Site 02"},
+ {code:"CLIMATISATION__S01",label:"Climatisation",site:"Site 01"},
+ {code:"UTILITIES_STERILE__S01",label:"Utilities stérile",site:"Site 01"},
+ {code:"INSTRUMENTATIONS__S01",label:"Instrumentation",site:"Site 01"},
+ {code:"ELECTRICIEN__S01",label:"Électricien",site:"Site 01"}
 ];
 const aliases=new Map(LOCALISATION_CODES.map(x=>[x.code,x]));
 export function localisationSite(code){

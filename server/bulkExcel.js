@@ -2,7 +2,7 @@
    Aucun remplacement silencieux des données existantes. */
 import crypto from "node:crypto";
 import { readXlsx, makeXlsx } from "./excel.js";
-import {localisationSite,SITES} from "../client/src/locationModel.js";
+import {localisationSite,SITES,LOCALISATION_CODES} from "../client/src/locationModel.js";
 
 export const EXCEL_MODULES = {
   machines: {
@@ -15,10 +15,10 @@ export const EXCEL_MODULES = {
     title:"Effectif",table:"effectif",key:["matricule"],
     fields:["matricule","nom","prenom","initiale","service","fonction","telephone","email","date_recrutement","date_depart","unites","toutes_unites","site","type_contrat","date_debut_contrat","date_fin_contrat","commentaire_depart","actif"],
     required:["matricule"],
-    help:["Matricule existant : seuls site, initiale et contrat peuvent être complétés ; aucun rôle, nom ou compte n'est remplacé.",
+    help:["Matricule existant : le département (service), la fonction, le site et les localisations peuvent être mis à jour ; le rôle, le nom, le mot de passe et le compte sont conservés.",
       "Nouveau salarié : nom, prénom, service et fonction obligatoires ; compte désactivé pour la connexion jusqu'à configuration par l'administrateur.",
       "CDI sans date de fin ; CDD avec date de fin obligatoire ; Apprentissage et Autre autorisés avec une fin facultative.","Initiale facultative ; les cellules vides ne suppriment pas les valeurs existantes.",
-      "Localisations séparées par ; (exemple U3-1;QC__S02). Site calculé selon les localisations."]
+      "Localisations séparées par ; (exemple U3-1;QC__S02). Toutes_unites=Oui : toutes les localisations, y compris QC et Microbiologie sur les deux sites."]
   },
   pannes:{
     title:"Pannes / Work Orders",table:"pannes",key:["wo"],
@@ -127,21 +127,37 @@ function normalizeForSave(module,row,context,existing){
     return {...common,...data,site,actif:bool(row.actif,true)?1:0};
   }
   if(module==="effectif"){
-    const unitCodes=coerce(row.unites).split(/[;,]/).map(s=>s.trim()).filter(Boolean);
+    const unitCodes=[...new Set(coerce(row.unites).split(/[;,]/).map(s=>s.trim()).filter(Boolean))];
     const all=bool(row.toutes_unites,false);
+    const known=new Set(["U1","U2","U3-1","U3-2","U4","U5","U6","SG01","SG02",
+      ...LOCALISATION_CODES.map(v=>v.code)]);
+    if(unitCodes.some(code=>!known.has(code)))throw new Error("Code localisation inconnu : "+
+      unitCodes.filter(code=>!known.has(code)).join(", "));
+    if(all&&unitCodes.length)throw new Error("Toutes les localisations : laisser la colonne unites vide.");
     const siteDerived=all?siteBoth:[...new Set(unitCodes.map(siteForUnit))].sort().join("; ");
     const s=normalizeSite(row.site);
     if(siteDerived&&s&&s!==siteDerived)throw new Error("Site incohérent avec les localisations affectées.");
     const desiredSite=siteDerived||s||null;
-    const contractData=contract(row.type_contrat,row.date_debut_contrat,row.date_fin_contrat,row.date_recrutement,existing);
     if(existing) {
       const changed={};
-      if(coerce(row.initiale))changed.initiale=coerce(row.initiale);
-      if(row.site||unitCodes.length||all)changed.site=desiredSite;
-      if(row.type_contrat||row.date_debut_contrat||row.date_fin_contrat)Object.assign(changed,contractData);
+      if(coerce(row.initiale)&&coerce(row.initiale)!==coerce(existing.initiale))changed.initiale=coerce(row.initiale);
+      if(coerce(row.service)&&coerce(row.service)!==coerce(existing.service))changed.service=coerce(row.service);
+      if(coerce(row.fonction)&&coerce(row.fonction)!==coerce(existing.fonction))changed.fonction=coerce(row.fonction);
+      const scopeProvided=row.site!==undefined||row.unites!==undefined||row.toutes_unites!==undefined;
+      const scopeUnitsProvided=row.unites!==undefined||row.toutes_unites!==undefined;
+      if(scopeProvided){
+        if(desiredSite!==existing.site)changed.site=desiredSite;
+        if(row.toutes_unites!==undefined&&all!==bool(existing.toutes_unites,false))changed.toutes_unites=all;
+      }
+      if(row.type_contrat||row.date_debut_contrat||row.date_fin_contrat)
+        Object.assign(changed,contract(row.type_contrat,row.date_debut_contrat,row.date_fin_contrat,row.date_recrutement,existing));
       if(coerce(row.commentaire_depart)&&coerce(row.commentaire_depart)!=="/")changed.commentaire_depart=coerce(row.commentaire_depart).slice(0,2000);
-      return {update:changed,units:[]};
+      const previousUnits=[...new Set(existing.units||[])].sort();
+      const desiredUnits=all?[]:row.unites!==undefined?unitCodes.sort():previousUnits;
+      const associationsChanged=scopeUnitsProvided&&JSON.stringify(previousUnits)!==JSON.stringify(desiredUnits);
+      return {update:changed,units:associationsChanged?desiredUnits:null,previousUnits};
     }
+    const contractData=contract(row.type_contrat,row.date_debut_contrat,row.date_fin_contrat,row.date_recrutement);
     for(const f of ["nom","prenom","service","fonction"])if(!coerce(row[f]))throw new Error(f+" obligatoire pour un nouveau collaborateur.");
     // Ne pas fabriquer des identifiants ou secrets de connexion pendant un import Excel.
     return {insert:{matricule:coerce(row.matricule),nom:coerce(row.nom),prenom:coerce(row.prenom),
@@ -266,7 +282,7 @@ async function parseValidated(module,encoded,deps){
       const payload=normalizeForSave(module,row,context,found);
       if(found && module!=="effectif"){duplicates++;return;}
       if(found && module==="effectif"){
-        if(Object.keys(payload.update).length){updates++;actions.push({kind:"update",id:found.id,values:payload.update,line});}
+        if(Object.keys(payload.update).length||payload.units!==null){updates++;actions.push({kind:"update",id:found.id,values:payload.update,units:payload.units,previousUnits:payload.previousUnits,line});}
         else duplicates++;
         return;
       }
@@ -328,11 +344,31 @@ export function registerExcelRoutes(app,{requireAuth,supabaseRequest,remoteEffec
       for(const action of selected){
         try{
           if(action.kind==="update"){
-            const result=await supabaseRequest("effectif",{
-              method:"PATCH",query:"?id=eq."+encodeURIComponent(action.id)+"&select=id",
-              prefer:"return=representation",body:{...action.values,updated_at:new Date().toISOString()}
-            });
-            if(!result?.length)throw new Error("Collaborateur introuvable.");
+            // Ajouter d'abord les nouvelles affectations ; ne jamais vider les anciennes
+            // si un ajout Supabase échoue. Une relance peut reprendre les opérations.
+            if(action.units!==null){
+              const before=new Set(action.previousUnits||[]);
+              const after=new Set(action.units);
+              const toAdd=[...after].filter(u=>!before.has(u));
+              if(toAdd.length)await supabaseRequest("effectif_unites",{
+                method:"POST",prefer:"return=minimal",
+                body:toAdd.map(unite=>({effectif_id:action.id,unite}))
+              });
+              for(const unite of before){
+                if(after.has(unite))continue;
+                await supabaseRequest("effectif_unites",{
+                  method:"DELETE",prefer:"return=minimal",
+                  query:"?effectif_id=eq."+encodeURIComponent(action.id)+"&unite=eq."+encodeURIComponent(unite)
+                });
+              }
+            }
+            if(Object.keys(action.values).length){
+              const result=await supabaseRequest("effectif",{
+                method:"PATCH",query:"?id=eq."+encodeURIComponent(action.id)+"&select=id",
+                prefer:"return=representation",body:{...action.values,updated_at:new Date().toISOString()}
+              });
+              if(!result?.length)throw new Error("Collaborateur introuvable.");
+            }
             updated++;continue;
           }
           if(module==="effectif"){

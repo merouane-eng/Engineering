@@ -31,6 +31,12 @@ function createHarness() {
       return rows;
     }
     writes.push({table,method,body,query});
+    if(method==="DELETE" && table==="effectif_unites"){
+      const id=decodeURIComponent(query.split("effectif_id=eq.")[1].split("&")[0]);
+      const unite=decodeURIComponent(query.split("unite=eq.")[1]);
+      data.effectif_unites=data.effectif_unites.filter(r=>r.effectif_id!==id||r.unite!==unite);
+      return [];
+    }
     if(method==="PATCH"){
       const id=decodeURIComponent(query.split("?id=eq.")[1].split("&")[0]);
       const row=data[table].find(r=>String(r.id)===id);
@@ -274,4 +280,37 @@ test("Effectif existant : compléter sans toucher rôle, mot de passe, nom ni st
   assert.equal(employee.initiale,"AAX");
   assert.equal(employee.date_debut_contrat,"2025-01-01");
   assert.equal(employee.commentaire_depart,"Fin administrative");
+});
+
+test("Import RH par matricule : département, fonction, localisations mises à jour sans modifier le rôle",async()=>{
+  const h=createHarness();
+  const file=xlsx(["matricule","service","fonction","site","unites","toutes_unites"],
+    [["A100","Instrumentation","Instrumentation Technicien 2","Site 01","U2; U3-1","Non"]]);
+  const p=await h.run("POST","/api/excel/:module/:action",{params:{module:"effectif",action:"preview"},body:{file}});
+  assert.equal(p.statusCode,200,JSON.stringify(p.body));
+  assert.equal(p.body.updates,1);
+  assert.equal(h.writes.length,0);
+  const done=await h.run("POST","/api/excel/:module/:action",{
+    params:{module:"effectif",action:"import"},body:{file,hash:p.body.hash}});
+  assert.equal(done.statusCode,200,JSON.stringify(done.body));
+  assert.equal(done.body.updated,1);
+  assert.equal(h.data.effectif[0].service,"Instrumentation");
+  assert.equal(h.data.effectif[0].fonction,"Instrumentation Technicien 2");
+  assert.equal(h.data.effectif[0].role,"admin");
+  assert.deepEqual(h.data.effectif_unites.map(x=>x.unite).sort(),["U2","U3-1"]);
+});
+test("Import RH : toutes les localisations inclut QC et Microbiologie sans créer un rôle admin",async()=>{
+  const h=createHarness();h.data.effectif[0].role="admin";
+  const file=xlsx(["matricule","site","toutes_unites"],
+    [["A100","Site 01; Site 02","Oui"]]);
+  const p=await h.run("POST","/api/excel/:module/:action",{params:{module:"effectif",action:"preview"},body:{file}});
+  assert.equal(p.statusCode,200,JSON.stringify(p.body));
+  assert.equal(p.body.updates,1);
+  const done=await h.run("POST","/api/excel/:module/:action",{
+    params:{module:"effectif",action:"import"},body:{file,hash:p.body.hash}});
+  assert.equal(done.statusCode,200,JSON.stringify(done.body));
+  assert.equal(h.data.effectif[0].toutes_unites,true);
+  assert.equal(h.data.effectif[0].site,"Site 01; Site 02");
+  assert.equal(h.data.effectif[0].role,"admin");
+  assert.equal(h.data.effectif_unites.length,0);
 });
