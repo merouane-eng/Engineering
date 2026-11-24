@@ -306,7 +306,7 @@ async function parseValidated(module,encoded,deps){
         units:module==="effectif"?payload.units:[],line});
     }catch(e){errors.push({line,message:e.message});}
   });
-  return {module,total:list.length,creations,updates,duplicates,errors,actions,hash:crypto.createHash("sha256").update(bytes).digest("hex")};
+  return {module,total:list.length,creations,updates,duplicates,errors,actions,hash:crypto.createHash("sha256").update(bytes).update(module==="machines"?(updateMachines?"update-existing":"insert-only"):"standard").digest("hex")};
 }
 export function registerExcelRoutes(app,{requireAuth,supabaseRequest,remoteEffectifWithUnits,localTimestamp}){
   // Contrôle côté serveur : le client ne peut pas débloquer ces routes.
