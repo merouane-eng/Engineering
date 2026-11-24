@@ -25,6 +25,7 @@ export function defaultPermission(user,module,action="view"){
   if(!CATALOG.get(module)?.has(action))return false;
   // Les paramètres et la gestion des comptes restent strictement réservés aux admins.
   if(module==="parametres")return isAdmin(user);
+  if(module==="effectif")return isAdmin(user)||(action==="view"&&isLead(user));
   if(isAdmin(user))return true;
   const lead=isLead(user);
   if(action==="view")return ["effectif","stats"].includes(module)?lead:true;
@@ -53,6 +54,7 @@ export function resolvePermissions(user,rules=[]){
     for(const [module,actions] of Object.entries(row.rules)){
       if(!CATALOG.has(module)||module==="parametres"||!actions||typeof actions!=="object")continue;
       for(const [action,choice] of Object.entries(actions)){
+        if(module==="effectif")continue; // RH : aucun droit personnalisable pour les non-admins
         if(CATALOG.get(module).has(action)&&typeof choice==="boolean")result[module][action]=choice;
       }
     }
@@ -66,6 +68,7 @@ export function resolvePermissions(user,rules=[]){
 export function permissionAllowed(user,module,action="view"){
   if(!CATALOG.get(module)?.has(action))return false;
   if(module==="parametres")return isAdmin(user);
+  if(module==="effectif")return isAdmin(user)||(action==="view"&&isLead(user));
   if(isAdmin(user))return true;
   const stored=user?.permissions?.[module]?.[action];
   const allow=typeof stored==="boolean"?stored:defaultPermission(user,module,action);

@@ -598,8 +598,11 @@ const electricPM = (row,names) => normService(row.service_intervenant)==="electr
   (!row.service_intervenant && names.has(normPerson(row.responsable)));
 
 async function remoteEffectifWithUnits(user) {
+  if(!isAdmin(user) && !isLead(user))return [];
   const [employees, associations] = await Promise.all([
-    supabaseRequest("effectif", { query: "?select=*&order=nom.asc,prenom.asc" }),
+    supabaseRequest("effectif", { query: isAdmin(user)
+      ? "?select=*&order=nom.asc,prenom.asc"
+      : "?select=id,nom,prenom,fonction,service,site,toutes_unites&order=nom.asc,prenom.asc" }),
     supabaseRequest("effectif_unites", { query: "?select=effectif_id,unite&order=unite.asc" })
   ]);
   const unitsByEmployee = new Map();
@@ -611,13 +614,22 @@ async function remoteEffectifWithUnits(user) {
   const units=new Set(await allowedUnitsForUser(user));
   return employees.filter(employee=>{
     if(isAdmin(user))return true;
-    if(!permissionAllowed(user,"effectif","view")||!sameDepartment(user,employee.service))return false;
+    if(!permissionAllowed(user,"effectif","view"))return false;
     const linked=unitsByEmployee.get(String(employee.id))||[];
-    return linked.some(unit=>units.has(unit))||
+    const overlapping=linked.some(unit=>units.has(unit));
+    // Un superviseur ne consulte que les salariés partageant une localisation autorisée.
+    // Les salariés globaux restent visibles sur les sites couverts par le superviseur.
+    return overlapping||
       (employee.toutes_unites&&SITES.some(site=>String(employee.site||"").includes(site)&&[...units].some(unit=>localisationSite(unit)===site)));
   }).map(employee => {
+    const linked=unitsByEmployee.get(String(employee.id))||[];
+    if(!isAdmin(user))return {
+      nom:employee.nom||"",prenom:employee.prenom||"",fonction:employee.fonction||"",
+      units:linked.filter(unit=>units.has(unit)),
+      ...(employee.toutes_unites?{units:[...units].filter(unit=>SITES.some(site=>String(employee.site||"").includes(site)&&localisationSite(unit)===site))}:{})
+    };
     const { password_hash, ...safeEmployee } = employee;
-    return { ...safeEmployee, is_admin: employee.role==="admin", units: unitsByEmployee.get(String(employee.id)) || [] };
+    return { ...safeEmployee, is_admin: employee.role==="admin", units: linked };
   });
 }
 
@@ -1161,6 +1173,7 @@ app.get("/api/modules/:module", requireAuth, (req, res, next) => requireModule(r
     catch (error) { return res.status(502).json({ error: `Chargement machines impossible: ${error.message}` }); }
   }
   if (module === "effectif") {
+    if(!isAdmin(req.user)&&!isLead(req.user))return res.status(403).json({error:"Module Effectif réservé aux responsables."});
     try { return res.json(await remoteEffectifWithUnits(req.user)); }
     catch (error) { return res.status(502).json({ error: `Chargement effectif impossible: ${error.message}` }); }
   }
@@ -1300,7 +1313,7 @@ app.put("/api/users/:id/role", requireAuth, requireModule("parametres"), async (
   }
 });
 
-app.get("/api/effectif/context", requireAuth, requireModule("effectif"), async (req, res) => {
+app.get("/api/effectif/context", requireAuth, requireModule("effectif"), (req,res,next)=>isAdmin(req.user)?next():res.status(403).json({error:"Référentiel RH réservé à l’administrateur."}), async (req, res) => {
   try {
     const [machines, employees, references] = await Promise.all([
       Promise.all([supabaseRequest("machines", { query: "?select=unite&actif=eq.1" }),
@@ -1407,7 +1420,7 @@ function effectifRHPayload(body) {
     commentaire_depart: String(body.commentaire_depart || "").trim().slice(0,2000) || null } };
 }
 
-app.post("/api/effectif", requireAuth, requirePermission("effectif","create"), async (req, res) => {
+app.post("/api/effectif", requireAuth, requirePermission("effectif","create"), (req,res,next)=>isAdmin(req.user)?next():res.status(403).json({error:"Gestion RH réservée à l’administrateur."}), async (req, res) => {
   const matricule = String(req.body.matricule || "").trim();
   const nom = String(req.body.nom || "").trim();
   const prenom = String(req.body.prenom || "").trim();
@@ -1469,7 +1482,34 @@ app.post("/api/effectif", requireAuth, requirePermission("effectif","create"), a
   }
 });
 
-app.put("/api/effectif/:id", requireAuth, requirePermission("effectif","edit"), async (req, res) => {
+// La suppression RH est une opération administrative explicite.
+// Les liens historiques/FK Supabase empêchent toute suppression dangereuse.
+app.delete("/api/effectif/:id", requireAuth, (req,res,next)=>
+  isAdmin(req.user)?next():res.status(403).json({error:"Suppression RH réservée aux administrateurs."}),
+  async (req,res)=>{
+    const id=String(req.params.id||"").trim();
+    if(!id)return res.status(400).json({error:"Identifiant manquant."});
+    if(id===String(req.user.supabase_id||req.user.id))
+      return res.status(403).json({error:"Vous ne pouvez pas supprimer votre propre compte."});
+    try{
+      const rows=await supabaseRequest("effectif",{
+        query:"?select=id,role,actif,username&id=eq."+encodeURIComponent(id)+"&limit=1"
+      });
+      const employee=rows?.[0];
+      if(!employee)return res.status(404).json({error:"Collaborateur introuvable."});
+      if(employee.role==="admin")return res.status(409).json({error:"Compte administrateur protégé : modifier son rôle séparément."});
+      if(employee.actif||employee.username)
+        return res.status(409).json({error:"Désactiver le compte et retirer ses accès avant toute suppression définitive."});
+      const linked=await supabaseRequest("effectif_unites",{
+        query:"?select=unite&effectif_id=eq."+encodeURIComponent(id)
+      });
+      if(linked?.length)return res.status(409).json({error:"Retirer les affectations de localisation avant suppression."});
+      await supabaseRequest("effectif",{method:"DELETE",query:"?id=eq."+encodeURIComponent(id),prefer:"return=minimal"});
+      return res.json({ok:true});
+    }catch(error){return res.status(409).json({error:"Suppression impossible : ce collaborateur est peut-être lié à des historiques. "+error.message});}
+  });
+
+app.put("/api/effectif/:id", requireAuth, requirePermission("effectif","edit"), (req,res,next)=>isAdmin(req.user)?next():res.status(403).json({error:"Gestion RH réservée à l’administrateur."}), async (req, res) => {
   const id = String(req.params.id || "");
   const matricule = String(req.body.matricule || "").trim();
   const nom = String(req.body.nom || "").trim();

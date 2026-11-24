@@ -47,9 +47,11 @@ function EffectifRH({ user, api }) {
   const admin=user?.role==="admin";
   const canCreate=permissionAllowed(user,"effectif","create");
   const canEdit=permissionAllowed(user,"effectif","edit");
-  const load=async()=>{setLoading(true);setError("");try{const [employees,refs]=await Promise.all([
-    api("/api/modules/effectif"),api("/api/effectif/context")
-  ]);setRows(employees);setContext(refs);}catch(e){setError(e.message);}finally{setLoading(false);}};
+  const load=async()=>{setLoading(true);setError("");try{
+    if(!admin){setRows(await api("/api/modules/effectif"));return;}
+    const [employees,refs]=await Promise.all([api("/api/modules/effectif"),api("/api/effectif/context")]);
+    setRows(employees);setContext(refs);
+  }catch(e){setError(e.message);}finally{setLoading(false);}};
   useEffect(()=>{load();},[]);
   const siteMatches=r=>!site||getSites(r).includes(site);
   const serviceRows=rows.filter(siteMatches).filter(r=>!service||r.service===service);
@@ -85,6 +87,12 @@ function EffectifRH({ user, api }) {
   const editForm=r=>{setError("");setForm({...r,initiale:r.initiale||"",type_contrat:r.type_contrat||"",
     date_fin_contrat:iso(r.date_fin_contrat),date_debut_contrat:iso(r.date_debut_contrat),commentaire_depart:r.commentaire_depart||"",date_recrutement:iso(r.date_recrutement),date_depart:iso(r.date_depart),
     actif:trueValue(r.actif),is_admin:trueValue(r.is_admin),toutes_unites:trueValue(r.toutes_unites),units:employeeUnits(r)});};
+  const removeEmployee=async row=>{
+    if(!admin||!window.confirm("Supprimer définitivement ce collaborateur ? Les comptes actifs et les personnes liées à des historiques sont protégés."))return;
+    setError("");
+    try{await api("/api/effectif/"+row.id,{method:"DELETE"});await load();}
+    catch(e){setError(e.message);}
+  };
   const patch=(key,value)=>setForm(old=>({...old,[key]:value}));
   const toggleUnit=u=>setForm(old=>({...old,units:old.units.includes(u)?old.units.filter(v=>v!==u):[...old.units,u]}));
   const selectedSites=form ? (form.toutes_unites||form.is_admin ? SITES : form.units.length?unique(form.units.map(siteForUnit)):[]) : [];
@@ -105,6 +113,36 @@ function EffectifRH({ user, api }) {
       setForm(null);await load();
     }catch(e){setError(e.message);}finally{setSaving(false);}
   };
+  // La lecture restreinte ne reçoit du serveur que quatre données :
+  // nom, prénom, fonction et localisations autorisées.
+  if(!admin)return <div className="effectifMaster ef-rh">
+    <section className="ef-hero"><div><span className="ef-eyebrow">ENGINEERING · ÉQUIPES</span>
+      <h1>Effectifs de mes localisations</h1>
+      <p>Consultation des collaborateurs affectés à vos localisations. Lecture seule.</p>
+    </div><div className="ef-heroIcon"><Users/></div></section>
+    <section className="ef-toolbar"><div className="ef-search"><Search/>
+      <input placeholder="Rechercher nom, prénom, fonction ou localisation..." value={query}
+        onChange={e=>setQuery(e.target.value)} aria-label="Rechercher un collaborateur"/></div></section>
+    {error&&<div role="alert" className="formError">{error}</div>}
+    <div className="ef-results"><span>{rows.filter(r=>[r.nom,r.prenom,r.fonction,...employeeUnits(r)]
+      .join(" ").toLocaleLowerCase("fr").includes(query.toLocaleLowerCase("fr").trim())).length} collaborateur(s)</span>
+      <button type="button" onClick={load} disabled={loading}>{loading?"Chargement…":"Actualiser"}</button></div>
+    {!loading&&<section className="ef-grid">
+      {rows.filter(r=>[r.nom,r.prenom,r.fonction,...employeeUnits(r)]
+        .join(" ").toLocaleLowerCase("fr").includes(query.toLocaleLowerCase("fr").trim())).map((r,i)=>
+        <article key={i} className="ef-person">
+          <div className="ef-personHead"><span className="ef-avatar">{[r.prenom,r.nom]
+            .map(v=>clean(v).slice(0,1)).join("").toUpperCase()}</span>
+            <div className="ef-personName"><strong>{[r.prenom,r.nom].filter(Boolean).join(" ")}</strong></div>
+          </div>
+          <div className="ef-personRole"><Users/>{r.fonction||"Fonction non renseignée"}</div>
+          <div className="ef-personMeta"><div className="ef-metaRow"><span>Localisations</span>
+            <div className="ef-unitTags">{employeeUnits(r).length?employeeUnits(r).map(u=>
+              <span key={u}>{localisationName(u,{withSite:true})}</span>):<span>Non affecté</span>}</div>
+          </div></div>
+        </article>)}
+    </section>}
+  </div>;
   return <div className="effectifMaster ef-rh">
     <section className="ef-hero">
       <div><span className="ef-eyebrow">ENGINEERING · PEOPLE & OPERATIONS</span><h1>Effectif & ressources humaines</h1>
@@ -176,7 +214,7 @@ function EffectifRH({ user, api }) {
           <div className="ef-metaRow"><span>Téléphone</span><strong>{row.telephone||"—"}</strong></div>
           <div className="ef-metaRow"><span>Email</span><strong>{row.email||"—"}</strong></div>
         </div>
-        {canEdit&&<div className="ef-personFoot"><button onClick={()=>editForm(row)}><Save/> Modifier</button></div>}
+        {admin&&<div className="ef-personFoot"><button onClick={()=>editForm(row)}><Save/> Modifier</button><button type="button" className="dangerText" onClick={()=>removeEmployee(row)}><X/> Supprimer</button></div>}
       </article>;
     })}</section>:<div className="ef-empty"><Users/><strong>Aucun collaborateur ne correspond aux filtres.</strong><span>Modifie les critères ou efface les filtres.</span></div>)}
     {form&&<div className="modalBack" role="presentation"><form className="modal ef-rhModal" onSubmit={save}>
