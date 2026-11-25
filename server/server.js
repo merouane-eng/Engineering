@@ -1321,6 +1321,36 @@ app.post("/api/pm/:id/realiser", requireAuth, requirePermission("pm","edit"), as
 
 
 
+// Activation explicite des comptes existants sans identifiants.
+// Les comptes déjà protégés ne sont jamais réinitialisés automatiquement.
+app.post("/api/users/:id/activate-login",requireAuth,requireModule("parametres"),async(req,res)=>{
+ try{
+  const id=String(req.params.id||"").trim();
+  if(!id)return res.status(400).json({error:"Identifiant manquant."});
+  const rows=await supabaseRequest("effectif",{
+   query:"?select=id,matricule,nom,prenom,username,password_hash,role,actif&id=eq."+encodeURIComponent(id)+"&limit=1"
+  });
+  const account=rows[0];
+  if(!account)return res.status(404).json({error:"Collaborateur introuvable."});
+  if(!account.matricule||!account.nom||!account.prenom)
+   return res.status(400).json({error:"Matricule, nom et prénom obligatoires."});
+  if(account.username&&account.password_hash)
+   return res.status(409).json({error:"Ce compte possède déjà des identifiants : aucune modification effectuée."});
+  const username=account.username||
+   await availableUsername(account.nom,account.prenom,account.matricule,supabaseRequest);
+  const patch={
+   username,
+   ...(!account.password_hash?{password_hash:bcrypt.hashSync(String(account.matricule),10)}:{}),
+   updated_at:new Date().toISOString()
+  };
+  const updated=await supabaseRequest("effectif",{method:"PATCH",
+    query:"?id=eq."+encodeURIComponent(id)+"&select=id,username,matricule,actif",
+    prefer:"return=representation",body:patch});
+  if(!updated?.length)throw new Error("Activation non confirmée.");
+  return res.json({ok:true,username,actif:updated[0].actif,requiresPasswordChange:true});
+ }catch(e){return res.status(502).json({error:"Activation du compte impossible : "+e.message});}
+});
+
 app.put("/api/users/:id/password", requireAuth, requireModule("parametres"), async (req, res) => {
   const password = String(req.body.password || "");
   if (password.length < 4) return res.status(400).json({ error: "Mot de passe trop court" });

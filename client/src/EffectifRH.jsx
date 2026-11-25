@@ -93,6 +93,14 @@ function EffectifRH({ user, api }) {
     try{await api("/api/effectif/"+row.id,{method:"DELETE"});await load();}
     catch(e){setError(e.message);}
   };
+  const activateLogin=async row=>{
+    if(!admin||!row?.id||!window.confirm("Activer le compte de "+[row.prenom,row.nom].filter(Boolean).join(" ")+" ? Le matricule sera son mot de passe initial, à modifier dès la première connexion."))return;
+    setError("");
+    try{
+      await api("/api/users/"+encodeURIComponent(row.id)+"/activate-login",{method:"POST"});
+      await load();
+    }catch(e){setError(e.message);}
+  };
   const patch=(key,value)=>setForm(old=>({...old,[key]:value}));
   const toggleUnit=u=>setForm(old=>({...old,units:old.units.includes(u)?old.units.filter(v=>v!==u):[...old.units,u]}));
   const selectedSites=form ? (form.toutes_unites||form.is_admin ? SITES : form.units.length?unique(form.units.map(siteForUnit)):[]) : [];
@@ -214,7 +222,7 @@ function EffectifRH({ user, api }) {
           <div className="ef-metaRow"><span>Téléphone</span><strong>{row.telephone||"—"}</strong></div>
           <div className="ef-metaRow"><span>Email</span><strong>{row.email||"—"}</strong></div>
         </div>
-        {admin&&<div className="ef-personFoot"><button onClick={()=>editForm(row)}><Save/> Modifier</button><button type="button" className="dangerText" onClick={()=>removeEmployee(row)}><X/> Supprimer</button></div>}
+        {admin&&<div className="ef-personFoot">{!row.username&&<button type="button" onClick={()=>activateLogin(row)}><Users/> Activer la connexion</button>}<button onClick={()=>editForm(row)}><Save/> Modifier</button><button type="button" className="dangerText" onClick={()=>removeEmployee(row)}><X/> Supprimer</button></div>}
       </article>;
     })}</section>:<div className="ef-empty"><Users/><strong>Aucun collaborateur ne correspond aux filtres.</strong><span>Modifie les critères ou efface les filtres.</span></div>)}
     {form&&<div className="modalBack" role="presentation"><form className="modal ef-rhModal" onSubmit={save}>
