@@ -1076,7 +1076,7 @@ app.get("/api/pieces/context", requireAuth, requireModule("saisie"), async (req,
       if(!found[0]||!units.includes(found[0].unite)||!machineInDepartment(req.user,found[0]))
         return res.status(403).json({error:"Machine hors de votre périmètre."});
     }
-    const [catalog, links, history] = await Promise.all([
+    let [catalog, links, history] = await Promise.all([
       supabaseRequest("pieces", { query: "?select=id,reference,nom,description,actif&actif=eq.true&order=nom.asc&limit=500" }),
       machine
         ? supabaseRequest("machine_pieces", { query: `?select=id,piece_id,reference,nom,machine&machine=eq.${encodeURIComponent(machine)}&order=nom.asc` })
@@ -1085,6 +1085,37 @@ app.get("/api/pieces/context", requireAuth, requireModule("saisie"), async (req,
         ? supabaseRequest("panne_pieces", { query: `?select=id,panne_id,piece_id,machine,wo,reference,nom,quantite,date_utilisation,technicien&machine=eq.${encodeURIComponent(machine)}&order=date_utilisation.desc,id.desc&limit=200` })
         : Promise.resolve([])
     ]);
+    const visiblePannes=machine&&!isAdmin(req.user)?await remoteModuleRows("liste",req.user):[];
+    const ids=new Set(visiblePannes.map(row=>String(row.id)));
+    const visibleHistory=isAdmin(req.user)?history:history.filter(h=>ids.has(String(h.panne_id)));
+    // Rattrapage des anciennes pannes : les pièces étaient présentes dans
+    // panne_pieces, mais pas encore dans pieces / machine_pieces.
+    // Uniquement pour une machine autorisée ; aucune ligne d'historique n'est modifiée.
+    if(machine && visibleHistory.length){
+      const norm=value=>String(value||"").normalize("NFD")
+        .replace(/[\u0300-\u036f]/g,"").trim().replace(/\s+/g," ").toLowerCase();
+      const signature=(reference,nom)=>norm(reference)
+        ? "ref:"+norm(reference) : "nom:"+norm(nom);
+      const known=new Set(links.map(link=>signature(link.reference,link.nom)));
+      let repaired=false;
+      for(const previous of visibleHistory){
+        const signaturePart=signature(previous.reference,previous.nom);
+        if(!norm(previous.nom)||known.has(signaturePart))continue;
+        await referenceConsumedPiece({
+          piece_id:previous.piece_id,
+          nom_piece:previous.nom,
+          reference_piece:previous.reference
+        },machine,{supabaseRequest,attachPieceToMachine});
+        known.add(signaturePart);
+        repaired=true;
+      }
+      if(repaired){
+        [catalog,links]=await Promise.all([
+          supabaseRequest("pieces",{query:"?select=id,reference,nom,description,actif&actif=eq.true&order=nom.asc&limit=500"}),
+          supabaseRequest("machine_pieces",{query:`?select=id,piece_id,reference,nom,machine&machine=eq.${encodeURIComponent(machine)}&order=nom.asc`})
+        ]);
+      }
+    }
     const catalogById = new Map(catalog.map(piece => [String(piece.id), piece]));
     const machineParts = links.map(link => ({
       ...catalogById.get(String(link.piece_id)),
@@ -1092,9 +1123,7 @@ app.get("/api/pieces/context", requireAuth, requireModule("saisie"), async (req,
       reference: link.reference || catalogById.get(String(link.piece_id))?.reference || "",
       nom: link.nom || catalogById.get(String(link.piece_id))?.nom || ""
     })).filter(piece => piece.nom);
-    const visiblePannes=machine&&!isAdmin(req.user)?await remoteModuleRows("liste",req.user):[];
-    const ids=new Set(visiblePannes.map(row=>String(row.id)));
-    res.json({catalog,machineParts,history:isAdmin(req.user)?history:history.filter(h=>ids.has(String(h.panne_id)))});
+    res.json({catalog,machineParts,history:visibleHistory});
   } catch (error) {
     res.status(502).json({ error: `Chargement du référentiel pièces impossible: ${error.message}` });
   }
