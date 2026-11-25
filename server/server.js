@@ -9,7 +9,7 @@ import { registerExcelRoutes } from "./bulkExcel.js";
 import { readAllSupabase } from "./paginatedSupabase.js";
 import {isClosedPanne,canonicalPanneStatus} from "../client/src/panneStatus.js";
 import { localisationSite, SITES, LOCALISATION_CODES } from "../client/src/locationModel.js";
-import {isAdmin,isLead,permittedModule,permissionAllowed,sameDepartment,machineInDepartment,panneInDepartment,pmInDepartment,employeeOwnsPanne,panneEditable,nameAccess} from "../client/src/accessPolicy.js";
+import {isAdmin,isLead,isInstrumentation,pmLocationsForUser,permittedModule,permissionAllowed,sameDepartment,machineInDepartment,panneInDepartment,pmInDepartment,employeeOwnsPanne,panneEditable,nameAccess} from "../client/src/accessPolicy.js";
 import {createAccessManager} from "./accessSettings.js";
 import {pmVisibility} from "../client/src/pmVisibility.js";
 import { createSettingsHandlers } from "./desktopSettings.js";
@@ -728,18 +728,22 @@ async function remoteModuleRows(module,user){
       Boolean(panneEditable(user,row)&&(row.cree_par_effectif_id||legacy.has(nameAccess(row.technicien))))}));
   }
   if(module==="pm"){
+    const scopedUnits=new Set(pmLocationsForUser(user,units));
     const [rows,machines]=await Promise.all([
       supabaseReadAll("pm_programmees","?select=*&order=date_prevue.desc,id.desc"),
-      visibleMachineRows(user)
+      isInstrumentation(user)
+        ? supabaseReadAll("machines","?select=tag,unite,departement,designation,actif&order=tag.asc")
+        : visibleMachineRows(user)
     ]);
     const machineIndex=new Map(machines.map(machine=>[machine.tag,machine]));
     return rows.flatMap(row=>{
-      const access=pmVisibility(user,row,units,machineIndex.get(row.machine_tag));
+      const access=pmVisibility(user,row,scopedUnits,machineIndex.get(row.machine_tag));
       return access.visible?[{...row,consultation_seule:access.readOnly,
         attribution_requise:access.reason==="legacy-unassigned"}]:[];
     });
   }
   if(module==="operating"){
+    if(isInstrumentation(user))return [];
     const [entries,machines]=await Promise.all([
       supabaseReadAll("operating_time","?select=*&order=date_jour.desc,id.desc"),
       visibleMachineRows(user)
@@ -915,8 +919,10 @@ app.get("/api/saisie/context", requireAuth, requireModule("saisie"), async (req,
 app.get("/api/pm/context", requireAuth, requireModule("pm"), async (req, res) => {
   try {
     const [units, allMachines, employees, programmes, references] = await Promise.all([
-      userUnits(req.user),
-      visibleMachineRows(req.user),
+      userUnits(req.user).then(units=>pmLocationsForUser(req.user,units)),
+      isInstrumentation(req.user)
+        ? supabaseReadAll("machines","?select=tag,unite,designation,actif,departement&order=tag.asc")
+        : visibleMachineRows(req.user),
       supabaseRequest("effectif", { query: "?select=id,nom,prenom,service,actif&actif=eq.true&order=nom.asc,prenom.asc" }),
       supabaseReadAll("pm_programmees","?select=id,frequence&order=id.asc"),
       desktopSettings.list()
@@ -1197,7 +1203,7 @@ app.post("/api/pm", requireAuth, requirePermission("pm","create"), async (req, r
   try {
     const unit = String(req.body.unite || "");
     const tag = String(req.body.machine_tag || "");
-    const allowed = await allowedUnitsForUser(req.user);
+    const allowed = pmLocationsForUser(req.user,await allowedUnitsForUser(req.user));
     if (!allowed.includes(unit)) return res.status(403).json({ error: "Localisation non autorisée" });
     const machines = await supabaseRequest("machines", { query: `?select=tag,designation,unite,departement&tag=eq.${encodeURIComponent(tag)}&actif=eq.1&limit=1` });
     const machine = machines[0];
@@ -1246,7 +1252,7 @@ app.post("/api/pm/:id/realiser", requireAuth, requirePermission("pm","edit"), as
     const pm = found[0];
     if (!pm) return res.status(404).json({ error: "PM introuvable" });
     if (pm.statut !== "Planifiée") return res.status(400).json({ error: "Cette PM n'est pas planifiée" });
-    const allowed = await allowedUnitsForUser(req.user);
+    const allowed = pmLocationsForUser(req.user,await allowedUnitsForUser(req.user));
     if (!allowed.includes(pm.unite)) return res.status(403).json({ error: "Localisation non autorisée" });
     if (!pmInDepartment(req.user,pm)) return res.status(403).json({ error: "PM réservée à un autre département" });
     const machineRows=await supabaseRequest("machines",{query:"?select=tag,unite,departement&tag=eq."+encodeURIComponent(pm.machine_tag)+"&limit=1"});

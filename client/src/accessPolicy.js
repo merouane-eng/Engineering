@@ -3,6 +3,13 @@
 export const normAccess=value=>String(value??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase().replace(/\s+/g," ");
 export const nameAccess=value=>normAccess(value).replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");
 export const isAdmin=user=>user?.role==="admin";
+// Périmètre métier Instrumentation : un administrateur conserve ses droits globaux.
+export const isInstrumentation=user=>!isAdmin(user)&&normAccess(user?.service)==="instrumentation";
+export const INSTRUMENTATION_PM_LOCATIONS=Object.freeze([
+ "QC__S01","MICROBIOLOGIE__S01","INSTRUMENTATIONS__S01"
+]);
+export const pmLocationsForUser=(user,locations)=>isInstrumentation(user)
+ ? [...INSTRUMENTATION_PM_LOCATIONS] : [...(locations||[])];
 export const isLead=user=>isAdmin(user)||user?.role==="superviseur"||
  /(?:^|\b)(?:superviseur|supervisor|manager)(?:\b|$)|shift[\s-]*leader/.test(normAccess(user?.fonction));
 
@@ -26,6 +33,7 @@ export function defaultPermission(user,module,action="view"){
   // Les paramètres et la gestion des comptes restent strictement réservés aux admins.
   if(module==="parametres")return isAdmin(user);
   if(module==="effectif")return isAdmin(user)||(action==="view"&&isLead(user));
+  if(module==="operating"&&isInstrumentation(user))return false;
   if(isAdmin(user))return true;
   const lead=isLead(user);
   if(action==="view")return ["effectif","stats"].includes(module)?lead:true;
@@ -54,7 +62,7 @@ export function resolvePermissions(user,rules=[]){
     for(const [module,actions] of Object.entries(row.rules)){
       if(!CATALOG.has(module)||module==="parametres"||!actions||typeof actions!=="object")continue;
       for(const [action,choice] of Object.entries(actions)){
-        if(module==="effectif")continue; // RH : aucun droit personnalisable pour les non-admins
+        if(module==="effectif"||(module==="operating"&&isInstrumentation(user)))continue; // restrictions métier non délégables
         if(CATALOG.get(module).has(action)&&typeof choice==="boolean")result[module][action]=choice;
       }
     }
