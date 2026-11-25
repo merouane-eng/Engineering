@@ -20,6 +20,10 @@ function createHarness() {
   async function request(table,{method="GET",query="",body}={}){
     if(method==="GET"){
       let rows=data[table]||[];
+      if(query.includes("username=ilike.")){
+        const username=decodeURIComponent(query.split("username=ilike.")[1].split("&")[0]).toLowerCase();
+        rows=rows.filter(row=>String(row.username||"").toLowerCase()===username);
+      }
       if(query.includes("&id=eq.")){
         const id=decodeURIComponent(query.split("&id=eq.")[1].split("&")[0]);
         rows=rows.filter(row=>String(row.id)===id);
@@ -347,4 +351,26 @@ test("Machines : un TAG du Site 02 ne peut pas être déplacé vers Site 01 par 
  assert.equal(p.body.errors.length,1);
  assert.match(p.body.errors[0].message,/Changement de site interdit/);
  assert.equal(h.writes.length,0);
+});
+
+test("Import Effectif : compte généré automatiquement, mot de passe haché, aucun compte existant remplacé",async()=>{
+ const h=createHarness();
+ const file=xlsx(["matricule","nom","prenom","service","fonction","unites","site"],
+ [["0456","BÉNALI","Mouna","Instrumentation","Instrumentation Technician","QC__S01","Site 01"]]);
+ const params={module:"effectif",action:"preview"};
+ const preview=await h.run("POST","/api/excel/:module/:action",{params,body:{file}});
+ assert.equal(preview.body.errors.length,0,JSON.stringify(preview.body.errors));
+ assert.equal(preview.body.creations,1);
+ assert.equal(h.writes.length,0);
+ const result=await h.run("POST","/api/excel/:module/:action",{
+  params:{module:"effectif",action:"import"},body:{file,hash:preview.body.hash}});
+ assert.equal(result.body.imported,1,JSON.stringify(result.body));
+ const added=h.data.effectif.find(x=>x.matricule==="0456");
+ assert.equal(added.username,"benali.mouna");
+ assert.equal(added.actif,true);
+ assert.equal(added.role,"technicien");
+ assert.ok(added.password_hash.startsWith("$2"));
+ assert.notEqual(added.password_hash,"0456");
+ const bcrypt=await import("bcryptjs");
+ assert.equal(bcrypt.default.compareSync("0456",added.password_hash),true);
 });

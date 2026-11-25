@@ -1,6 +1,8 @@
 /* Import/export Excel administrateur pour Engineering PC/mobile.
    Aucun remplacement silencieux des données existantes. */
 import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
+import {availableUsername} from "./accountCredentials.js";
 import { readXlsx, makeXlsx } from "./excel.js";
 import {localisationSite,SITES,LOCALISATION_CODES} from "../client/src/locationModel.js";
 
@@ -16,7 +18,7 @@ export const EXCEL_MODULES = {
     fields:["matricule","nom","prenom","initiale","service","fonction","telephone","email","date_recrutement","date_depart","unites","toutes_unites","site","type_contrat","date_debut_contrat","date_fin_contrat","commentaire_depart","actif"],
     required:["matricule"],
     help:["Matricule existant : le département (service), la fonction, le site et les localisations peuvent être mis à jour ; le rôle, le nom, le mot de passe et le compte sont conservés.",
-      "Nouveau salarié : nom, prénom, service et fonction obligatoires ; compte désactivé pour la connexion jusqu'à configuration par l'administrateur.",
+      "Nouveau salarié : nom, prénom, service et fonction obligatoires ; identifiant nom.prenom, mot de passe initial matricule et changement obligatoire au premier accès.",
       "CDI sans date de fin ; CDD avec date de fin obligatoire ; Apprentissage et Autre autorisés avec une fin facultative.","Initiale facultative ; les cellules vides ne suppriment pas les valeurs existantes.",
       "Localisations séparées par ; (exemple U3-1;QC__S02). Toutes_unites=Oui : toutes les localisations, y compris QC et Microbiologie sur les deux sites."]
   },
@@ -164,7 +166,7 @@ function normalizeForSave(module,row,context,existing){
       initiale:coerce(row.initiale)||null,service:coerce(row.service),fonction:coerce(row.fonction),
       telephone:coerce(row.telephone)||null,email:coerce(row.email)||null,
       date_recrutement:row.date_recrutement||null,date_depart:row.date_depart||null,
-      role:"technicien",actif:false,commentaire_depart:coerce(row.commentaire_depart)&&coerce(row.commentaire_depart)!=="/"?coerce(row.commentaire_depart).slice(0,2000):null,
+      role:"technicien",actif:true,commentaire_depart:coerce(row.commentaire_depart)&&coerce(row.commentaire_depart)!=="/"?coerce(row.commentaire_depart).slice(0,2000):null,
       toutes_unites:all,site:desiredSite, ...contractData},
       units:unitCodes};
   }
@@ -403,6 +405,10 @@ export function registerExcelRoutes(app,{requireAuth,supabaseRequest,remoteEffec
           }
           if(module==="effectif"){
             const data={...action.values};
+            if(!data.matricule||!data.nom||!data.prenom)
+              throw new Error("Matricule, nom et prénom obligatoires pour le compte.");
+            data.username=await availableUsername(data.nom,data.prenom,data.matricule,supabaseRequest);
+            data.password_hash=bcrypt.hashSync(String(data.matricule),10);
             const created=await supabaseRequest("effectif",{
               method:"POST",query:"?select=id",prefer:"return=representation",body:[data]
             });

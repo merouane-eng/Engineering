@@ -149,6 +149,40 @@ function Login({ onLogin, language, setLanguage }) {
   </main>;
 }
 
+function FirstPasswordChange({onComplete,onLogout}) {
+ const [current,setCurrent]=useState("");
+ const [next,setNext]=useState("");
+ const [confirm,setConfirm]=useState("");
+ const [error,setError]=useState("");
+ const [busy,setBusy]=useState(false);
+ const submit=async e=>{
+  e.preventDefault();setError("");
+  if(next!==confirm){setError("La confirmation ne correspond pas au nouveau mot de passe.");return;}
+  if(next.length<10){setError("Le mot de passe doit contenir au moins 10 caractères.");return;}
+  setBusy(true);
+  try{
+   const result=await api("/api/auth/change-password",{
+     method:"POST",body:JSON.stringify({currentPassword:current,newPassword:next})
+   });
+   localStorage.setItem("engineering_token",result.token);
+   onComplete(result.user);
+  }catch(e){setError(e.message);}finally{setBusy(false);}
+ };
+ return <main className="loginPage"><form className="loginCard" onSubmit={submit}>
+  <h1>Changer le mot de passe initial</h1>
+  <p>Votre matricule sert uniquement à la première connexion. Choisissez maintenant un mot de passe personnel d’au moins 10 caractères.</p>
+  <label htmlFor="pwd-current">Mot de passe initial</label>
+  <input id="pwd-current" type="password" autoComplete="current-password" required value={current} onChange={e=>setCurrent(e.target.value)}/>
+  <label htmlFor="pwd-next">Nouveau mot de passe</label>
+  <input id="pwd-next" type="password" autoComplete="new-password" minLength={10} required value={next} onChange={e=>setNext(e.target.value)}/>
+  <label htmlFor="pwd-confirm">Confirmer le nouveau mot de passe</label>
+  <input id="pwd-confirm" type="password" autoComplete="new-password" minLength={10} required value={confirm} onChange={e=>setConfirm(e.target.value)}/>
+  {error&&<div className="formError" role="alert">{error}</div>}
+  <button className="primary" type="submit" disabled={busy}>{busy?"Enregistrement…":"Enregistrer mon mot de passe"}</button>
+  <button type="button" onClick={onLogout} disabled={busy}>Se déconnecter</button>
+ </form></main>;
+}
+
 function Dashboard({ user, onNavigate }) {
   const [data,setData] = useState(null), [cloud,setCloud] = useState(null), [loading,setLoading] = useState(true), [error,setError] = useState("");
   const load = async () => { setLoading(true); setError(""); try { const r = await Promise.all([api("/api/dashboard"),api("/api/supabase/status").catch(() => ({linked:false}))]); setData(r[0]); setCloud(r[1]); } catch(e) { setError(e.message || "Chargement impossible"); } finally { setLoading(false); } };
@@ -933,6 +967,7 @@ function App() {
   const login = value => { localStorage.setItem("engineering_user", JSON.stringify(value)); setUser(value); };
   const logout = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch {} localStorage.removeItem("engineering_token"); localStorage.removeItem("engineering_user"); setUser(null); };
   if (!user) return <Login onLogin={login} language={language} setLanguage={setLanguage} />;
+  if(user.must_change_password)return <FirstPasswordChange onComplete={login} onLogout={logout}/>;
   const allowed = item => permittedModule(user,item);
   const visibleModule=allowed(module)?module:modules.find(([id])=>allowed(id))?.[0]||"";
   const content = !visibleModule?<div className="formError">Aucun module autorisé pour ce compte. Contactez un administrateur.</div>:visibleModule === "accueil" ? <Dashboard user={user} onNavigate={setModule} /> : visibleModule === "stats" ? <StatsMaster theme={theme} onThemeChange={setTheme} language={language} /> : visibleModule === "machines" ? <MachinePage user={user} /> : visibleModule === "saisie" ? <FailureEntry user={user} /> : visibleModule === "pm" ? <PreventiveMaintenance user={user} /> : visibleModule === "operating" ? <OperatingTime user={user} /> : visibleModule === "effectif" ? <Effectif user={user} api={api} /> :

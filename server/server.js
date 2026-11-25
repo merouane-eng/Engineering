@@ -6,6 +6,7 @@ import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import { registerExcelRoutes } from "./bulkExcel.js";
+import {availableUsername} from "./accountCredentials.js";
 import { readAllSupabase } from "./paginatedSupabase.js";
 import {isClosedPanne,canonicalPanneStatus} from "../client/src/panneStatus.js";
 import { localisationSite, SITES, LOCALISATION_CODES } from "../client/src/locationModel.js";
@@ -779,6 +780,8 @@ async function requireAuth(req,res,next){
       req.user={...tokenUser,id:localEmployee?.id??tokenUser.id,role:roleFor(tokenUser)};
     }
     req.user.permissions=await accessManager.resolve(req.user);
+    if(tokenUser.must_change_password&&!["/api/auth/change-password","/api/me","/api/auth/logout"].includes(req.path))
+      return res.status(403).json({error:"Modification du mot de passe initial obligatoire.",mustChangePassword:true});
     next();
   }catch(error){return res.status(503).json({error:"Vérification du compte indisponible."});}
 }
@@ -866,6 +869,7 @@ app.post("/api/auth/login", async (req, res) => {
         toutes_unites: Boolean(user.toutes_unites)
       };
       delete publicUser.password_hash;
+      publicUser.must_change_password=Boolean(user.matricule&&bcrypt.compareSync(String(user.matricule),user.password_hash));
       publicUser.permissions=await accessManager.resolve(publicUser);
       const token = issueSessionToken(publicUser);
       res.json({ token, user: publicUser });
@@ -876,12 +880,47 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(401).json({ error: "Identifiants incorrects" });
     }
     const publicUser = { ...user, role: roleFor(user) };
+    publicUser.must_change_password=Boolean(user.matricule&&bcrypt.compareSync(String(user.matricule),user.password_hash));
     delete publicUser.password_hash;
     const token = issueSessionToken(publicUser);
     res.json({ token, user: publicUser });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// Un mot de passe initial dérivé du matricule doit être changé dès la première connexion.
+app.post("/api/auth/change-password", requireAuth, async(req,res)=>{
+  const current=String(req.body.currentPassword||"");
+  const next=String(req.body.newPassword||"");
+  if(next.length<10||next.length>128||next===current)
+    return res.status(400).json({error:"Choisir un nouveau mot de passe de 10 caractères minimum, différent du précédent."});
+  try{
+    const id=req.user.supabase_id||req.user.id;
+    if(SUPABASE_URL&&SUPABASE_ANON_KEY){
+      const rows=await supabaseRequest("effectif",{
+        query:"?select=id,matricule,password_hash,actif&id=eq."+encodeURIComponent(id)+"&limit=1"
+      });
+      const account=rows[0];
+      if(!account?.actif||!account.password_hash||!bcrypt.compareSync(current,account.password_hash))
+        return res.status(401).json({error:"Mot de passe actuel incorrect."});
+      if(next===String(account.matricule))
+        return res.status(400).json({error:"Le nouveau mot de passe ne peut pas être le matricule."});
+      await supabaseRequest("effectif",{method:"PATCH",
+        query:"?id=eq."+encodeURIComponent(id),prefer:"return=minimal",
+        body:{password_hash:bcrypt.hashSync(next,12),updated_at:new Date().toISOString()}});
+    }else{
+      const account=dbGet("SELECT id,matricule,password_hash FROM techniciens WHERE id=?",[id]);
+      if(!account?.password_hash||!bcrypt.compareSync(current,account.password_hash))
+        return res.status(401).json({error:"Mot de passe actuel incorrect."});
+      if(next===String(account.matricule))return res.status(400).json({error:"Le nouveau mot de passe ne peut pas être le matricule."});
+      dbRun("UPDATE techniciens SET password_hash=? WHERE id=?",[bcrypt.hashSync(next,12),id]);
+    }
+    const nextUser={...req.user,must_change_password:false};
+    delete nextUser.password_hash;
+    const token=issueSessionToken(nextUser);
+    return res.json({ok:true,token,user:nextUser});
+  }catch(e){return res.status(502).json({error:"Modification du mot de passe impossible : "+e.message});}
 });
 
 app.post("/api/auth/logout", requireAuth, (req, res) => {
@@ -1449,13 +1488,7 @@ app.post("/api/effectif", requireAuth, requirePermission("effectif","create"), (
     });
     if (duplicate.length) return res.status(409).json({ error: "Ce matricule existe déjà" });
 
-    const baseUsername = `${nom}.${prenom}`.trim().toLowerCase().normalize("NFD")
-      .replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9._]/g, "");
-    let username = baseUsername || `user${matricule}`;
-    let suffix = 1;
-    while ((await supabaseRequest("effectif", {
-      query: `?select=id&username=ilike.${encodeURIComponent(username)}&limit=1`
-    })).length) username = `${baseUsername || `user${matricule}`}${suffix++}`;
+    const username=await availableUsername(nom,prenom,matricule,supabaseRequest);
 
     const role = req.body.is_admin ? "admin" :
       (/superviseur|supervisor/i.test(fonction) ? "superviseur" : "technicien");
@@ -1483,7 +1516,8 @@ app.post("/api/effectif", requireAuth, requirePermission("effectif","create"), (
         body: units.map(unite => ({ effectif_id: employee.id, unite }))
       });
     }
-    return res.status(201).json({ ...employee, is_admin: role === "admin", units });
+    const {password_hash,...safeEmployee}=employee;
+    return res.status(201).json({ ...safeEmployee, is_admin: role === "admin", units });
   } catch (error) {
     return res.status(502).json({ error: `Création Supabase impossible: ${error.message}` });
   }
