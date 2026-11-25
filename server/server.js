@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { registerExcelRoutes } from "./bulkExcel.js";
 import {availableUsername} from "./accountCredentials.js";
+import {referenceConsumedPiece} from "./partsReference.js";
 import { readAllSupabase } from "./paginatedSupabase.js";
 import {isClosedPanne,canonicalPanneStatus} from "../client/src/panneStatus.js";
 import { localisationSite, SITES, LOCALISATION_CODES } from "../client/src/locationModel.js";
@@ -1688,14 +1689,9 @@ app.post("/api/pannes", requireAuth, requirePermission("saisie","create"), async
     if (selectedParts.length) {
       const historyRows = [];
       for (const part of selectedParts) {
-        let pieceId = part.piece_id ? Number(part.piece_id) : null;
-        if (pieceId) {
-          const found = await supabaseRequest("pieces", { query: `?select=id,reference,nom&actif=eq.true&id=eq.${encodeURIComponent(pieceId)}&limit=1` });
-          if (!found[0]) pieceId = null;
-          else await attachPieceToMachine(found[0], body.machine);
-        }
+        const referenced=await referenceConsumedPiece(part,body.machine,{supabaseRequest,attachPieceToMachine});
         historyRows.push({
-          panne_id: created.id, piece_id: pieceId, machine: body.machine, wo: payload.wo,
+          panne_id: created.id, piece_id: referenced.id, machine: body.machine, wo: payload.wo,
           reference: part.reference_piece || null, nom: String(part.nom_piece).trim(),
           quantite: Math.max(1, Number(part.quantite || 1)), date_utilisation: panneDate.date,
           technicien: payload.technicien || null

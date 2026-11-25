@@ -478,6 +478,8 @@ function FailureEntry({ user }) {
         })
       });
       setSaved(true);
+      setPieces([]);
+      setPieceDraft({ selected: "", nom_piece: "", reference_piece: "", quantite: 1 });
       setDraft({ ...empty, unite: context.units[0] || "", technicien: context.technician, service: context.service });
     } catch (err) { setError(err.message); }
   };
@@ -511,7 +513,7 @@ function FailureEntry({ user }) {
         <label>Statut<select value={canonicalPanneStatus(draft.statut)} onChange={e=>setDraft({...draft,statut:e.target.value})}>{[...new Set([...(context.statuses||["Open","Close"]),draft.statut].filter(Boolean).map(canonicalPanneStatus))].map(s=><option key={s} value={s}>{panneStatusLabel(s,languageForUI())}</option>)}</select></label>
       </div><div className="fm-meta"><span>Durée calculée : <b>{downtime!==""?downtime+" min":"À déterminer"}</b></span><span>État : <b>{panneStatusLabel(draft.statut,languageForUI())}</b></span></div></section>
       <section className="fm-card"><div className="fm-head"><span className="fm-icon"><Wrench/></span><div><h3>Pièces de rechange</h3><p>Sélectionnez les pièces consommées ou ajoutez une nouvelle référence.</p></div></div>
-        <div className="failurePartsToolbar"><p>Les pièces ajoutées seront associées à cet ordre de travail.</p>{permissionAllowed(user,"machines","edit")&&<button className="secondary" type="button" onClick={()=>setPieceFormOpen(true)}><Plus/> Nouvelle pièce au catalogue</button>}</div>
+        <div className="failurePartsToolbar"><p>Les pièces utilisées sont conservées dans l’historique et ajoutées automatiquement au référentiel de la machine après l’enregistrement de la panne.</p>{permissionAllowed(user,"machines","edit")&&<button className="secondary" type="button" onClick={()=>setPieceFormOpen(true)}><Plus/> Nouvelle pièce au catalogue</button>}</div>
         <div className="piecePicker">
           <label>Catalogue de pièces<select value={pieceDraft.selected} onChange={e=>selectPiece(e.target.value)}><option value="">Saisir ou choisir une pièce...</option>{pieceContext.catalog.map(piece=><option key={piece.id} value={piece.id}>{piece.reference?piece.reference+" — ":""}{piece.nom}</option>)}</select></label>
           <label>Nom de la pièce<input value={pieceDraft.nom_piece} onChange={e=>setPieceDraft({...pieceDraft,nom_piece:e.target.value})} placeholder="Désignation"/></label>
@@ -523,7 +525,7 @@ function FailureEntry({ user }) {
         {pieces.length>0?<div className="usedParts">{pieces.map((piece,index)=><div key={piece.reference_piece+"-"+index}><strong>{piece.nom_piece}</strong><span>{piece.reference_piece||"Sans référence"} · Qté {piece.quantite}</span><button type="button" className="dangerText" onClick={()=>setPieces(current=>current.filter((_,itemIndex)=>itemIndex!==index))}>Retirer</button></div>)}</div>:<div className="empty">Aucune pièce ajoutée à cet ordre de travail.</div>}
       </section>
       <section className="fm-card"><div className="fm-head"><span className="fm-icon"><ClipboardCheck/></span><div><h3>Historique des pièces utilisées</h3><p>Traçabilité des consommations précédentes pour cette machine.</p></div></div>
-        <div className="fm-history"><table><thead><tr><th>Date</th><th>WO</th><th>Machine</th><th>Pièce</th><th>Référence</th><th>Quantité</th></tr></thead><tbody>{pieceContext.history.slice(0,50).map(piece=><tr key={piece.id}><td>{piece.date_utilisation||"—"}</td><td>{piece.wo||"—"}</td><td>{piece.machine}</td><td>{piece.nom}</td><td>{piece.reference||"—"}</td><td>{piece.quantite}</td></tr>)}</tbody></table></div>
+        <div className="fm-history"><table><thead><tr><th>Date</th><th>WO</th><th>Machine</th><th>Pièce</th><th>Référence</th><th>Quantité</th><th>Action</th></tr></thead><tbody>{pieceContext.history.slice(0,50).map(piece=><tr key={piece.id}><td>{piece.date_utilisation||"—"}</td><td>{piece.wo||"—"}</td><td>{piece.machine}</td><td>{piece.nom}</td><td>{piece.reference||"—"}</td><td>{piece.quantite}</td><td><button type="button" className="secondary" onClick={()=>setPieceDraft({selected:piece.piece_id?String(piece.piece_id):"",nom_piece:piece.nom,reference_piece:piece.reference||"",quantite:1})}>Réutiliser</button></td></tr>)}</tbody></table></div>
         {!draft.machine&&<div className="empty">Sélectionnez une machine pour afficher son historique.</div>}{draft.machine&&!pieceContext.history.length&&<div className="empty">Aucun historique de pièce pour cette machine.</div>}
       </section>
       <div className="fm-submit"><span>Vérifiez les informations avant de valider la déclaration.</span><button className="primary" type="submit"><Save/> Enregistrer la panne</button></div>
