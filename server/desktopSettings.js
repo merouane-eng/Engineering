@@ -3,7 +3,7 @@
  * Les données métier ne sont jamais supprimées ni renommées silencieusement. */
 import crypto from "node:crypto";
 import {makeXlsx,readXlsx,makeMultiSheetXlsx} from "./excel.js";
-import {localisationCode,localisationSite} from "../client/src/locationModel.js";
+import {localisationCode,localisationSite,canonicalLocalisationCode} from "../client/src/locationModel.js";
 
 export const REFERENCE_TABS = [
   ["service","Services"],["fonction","Fonctions"],["zone","Zones"],
@@ -42,7 +42,18 @@ export function createSettingsHandlers({supabaseRequest,remoteEffectifWithUnits}
   }
   async function list(){
     const refs=await rpc("list");
-    return Array.isArray(refs)?refs:[];
+    if(!Array.isArray(refs))return [];
+    const entries=refs.map(ref=>ref.type_liste==="unite"
+      ? {...ref,valeur:canonicalLocalisationCode(ref.valeur)}:ref);
+    // Plusieurs références historiques peuvent désigner la même localisation.
+    // Conserver en priorité la référence au code déjà canonique.
+    const result=new Map();
+    for(const ref of entries){
+      const key=ref.type_liste+"|"+norm(ref.valeur);
+      const previous=result.get(key);
+      if(!previous||(!previous.actif&&ref.actif))result.set(key,ref);
+    }
+    return [...result.values()];
   }
   async function getUsage(){
     const sources=[

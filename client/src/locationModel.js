@@ -15,14 +15,25 @@ export const LOCALISATION_CODES=[
  {code:"ELECTRICIEN__S01",label:"Électricien",site:"Site 01"}
 ];
 const aliases=new Map(LOCALISATION_CODES.map(x=>[x.code,x]));
+// Une seule identité métier pour « Traitement d’eau » : anciennes graphies,
+// apostrophes et codes générés automatiquement restent compatibles en lecture.
+export function canonicalLocalisationCode(value){
+ const raw=String(value||"").trim();
+ const m=raw.match(/^(.*?)(?:__S0?([12]))?$/i);
+ const stem=(m?.[1]||raw).normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+   .toUpperCase().replace(/[^A-Z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+ if(["TRAITEMENT_EAU","TRAITEMENT_D_EAU","TRAITEMENT_DEAU"].includes(stem))
+   return "TRAITEMENT_EAU__S0"+(m?.[2]||"1");
+ return raw;
+}
 export function localisationSite(code){
- const c=String(code||"").trim();
+ const c=canonicalLocalisationCode(code);
  const special=aliases.get(c);if(special)return special.site;
  if(/__S02$/i.test(c)||/^(U6|U06|SG02)$/i.test(c))return "Site 02";
  return "Site 01";
 }
 export function localisationLabel(code){
- const value=String(code||"").trim();
+ const value=canonicalLocalisationCode(code);
  const known=aliases.get(value);if(known)return known.label;
  return value.replace(/__S0[12]$/i,"").replaceAll("_"," ").trim();
 }
@@ -39,10 +50,11 @@ export function localisationCode(label,site){
  if(/^(U[0-9]+(?:-[0-9]+)?|SG0[12])$/i.test(clean))return clean.toUpperCase();
  const slug=clean.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase()
   .replace(/[^A-Z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+ if(["TRAITEMENT_EAU","TRAITEMENT_D_EAU","TRAITEMENT_DEAU"].includes(slug)) return "TRAITEMENT_EAU__"+(site==="Site 02"?"S02":"S01");
  if(!slug||slug.length>90)throw new Error("Nom de localisation invalide.");
  return slug+"__"+(site==="Site 02"?"S02":"S01");
 }
 export function localisationsForSite(codes,site){
- return [...new Set((codes||[]).filter(c=>!site||localisationSite(c)===site))].sort((a,b)=>
+ return [...new Set((codes||[]).map(canonicalLocalisationCode).filter(c=>!site||localisationSite(c)===site))].sort((a,b)=>
   localisationLabel(a).localeCompare(localisationLabel(b),"fr"));
 }
