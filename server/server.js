@@ -114,7 +114,7 @@ const modules = {
   pm: ["admin", "superviseur", "technicien"],
   operating: ["admin", "superviseur", "technicien"],
   stats: ["admin", "superviseur", "technicien"],
-  sop: ["admin", "superviseur", "technicien"],
+  sop: [], // SOP désactivé pour tous les comptes.
   parametres: ["admin"]
 };
 
@@ -1892,6 +1892,7 @@ app.put("/api/tables/:table/:id", requireAuth, async (req, res) => {
 
 
 app.delete("/api/tables/:table/:id", requireAuth, async (req, res) => {
+  if(req.params.table==="sop")return res.status(403).json({error:"Module SOP désactivé."});
   if(req.params.table==="machines"){
     if(req.user.role!=="admin")return res.status(403).json({error:"Réservé aux administrateurs."});
     try{

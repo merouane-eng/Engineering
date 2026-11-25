@@ -31,7 +31,7 @@ const modules = [
   ["liste", "Liste des pannes", ClipboardList],
   ["pm", "Maintenance préventive", CalendarClock],
   ["operating", "Operating Time", Gauge],
-  ["sop", "SOP", ClipboardCheck],
+  // SOP masqué pour tous les comptes, y compris les administrateurs.
   ["stats", "Statistiques", Activity],
   ["parametres", "Paramètres", Settings]
 ];
