@@ -79,6 +79,12 @@ function EffectifRH({ user, api }) {
     .sort((a,b)=>b.date.localeCompare(a.date));
   const contracts=[["CDI",reportRows.filter(r=>r.type_contrat==="CDI").length],["CDD",cddCount],["Apprentissage",reportRows.filter(r=>r.type_contrat==="APPRENTISSAGE").length],["Autre",reportRows.filter(r=>r.type_contrat==="AUTRE").length],["Non renseigné",reportRows.filter(r=>!r.type_contrat).length]];
   const reset=()=>{setQuery("");setSite("");setService("");setFonction("");setUnite("");setStatus("all");};
+  const showEmployee=row=>{
+    // Effacer les filtres secondaires qui pourraient cacher la personne recherchée.
+    setSite("");setService("");setFonction("");setUnite("");setStatus("all");
+    setQuery(String(row.matricule||[row.prenom,row.nom].filter(Boolean).join(" ")));
+    setShowRh(false);
+  };
   const changeSite=v=>{setSite(v);setService("");setFonction("");setUnite("");};
   const changeService=v=>{setService(v);setFonction("");setUnite("");};
   const newForm=()=>{setError("");setForm({matricule:"",nom:"",prenom:"",initiale:"",service:"",fonction:"",telephone:"",email:"",
@@ -192,7 +198,14 @@ function EffectifRH({ user, api }) {
           <div className="ef-rhContracts">{contracts.map(([label,n],i)=><div key={label} className="ef-rhContractItem">
             <div><span>{label}</span><strong>{n}</strong></div><div className="ef-rhTrack"><span className={"ef-rhTrackFill n"+i} style={{width:reportRows.length?n/reportRows.length*100+"%":"0%"}}/></div>
             <small>{reportRows.length?Math.round(n/reportRows.length*100):0}%</small></div>)}</div>
-          {soon.length>0&&<div className="ef-rhNotice"><CircleAlert/> {soon.length} échéance(s) de CDD sous 30 jours</div>}</article>
+          {soon.length>0&&<div className="ef-rhNotice" style={{display:"block"}}>
+             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><CircleAlert/> <strong>{soon.length} échéance(s) de CDD sous 30 jours</strong></div>
+             <div style={{display:"grid",gap:8}}>{soon.slice().sort((a,b)=>iso(a.date_fin_contrat).localeCompare(iso(b.date_fin_contrat))).map(r=>
+               <div key={r.id||r.matricule} style={{display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                 <span><strong>{[r.prenom,r.nom].filter(Boolean).join(" ")}</strong> · Matricule {r.matricule||"—"} · Échéance {formatDate(r.date_fin_contrat)}</span>
+                 <button type="button" onClick={()=>showEmployee(r)} aria-label={"Voir la fiche de "+[r.prenom,r.nom].filter(Boolean).join(" ")}>Voir la fiche <ArrowUpRight size={14}/></button>
+               </div>)}</div>
+           </div>}</article>
       </div>
       <div className="ef-rhMovements"><div className="ef-rhPanelHead"><div><h3>Journal des mouvements</h3><small>Événements enregistrés pour {year}</small></div>
         <div className="ef-rhTabs"><button className={rhTab==="mouvements"?"active":""} onClick={()=>setRhTab("mouvements")}>Mouvements</button><button className={rhTab==="contrats"?"active":""} onClick={()=>setRhTab("contrats")}>Contrats CDD</button></div></div>
