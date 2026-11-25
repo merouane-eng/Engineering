@@ -27,8 +27,14 @@ function MovementChart({ arrivals, departures }) {
   return <div className="ef-chart" role="img" aria-label="Histogramme mensuel des recrutements et des départs">
     {MONTHS.map((name,i) => <div className="ef-chartCol" key={name}>
       <div className="ef-chartBars">
-        <span className="ef-chartBar arrivals" title={name + " : " + arrivals[i] + " recrutement(s)"} style={{height:Math.max(arrivals[i] ? 8 : 0, arrivals[i]/max*100) + "%"}} />
-        <span className="ef-chartBar departures" title={name + " : " + departures[i] + " départ(s)"} style={{height:Math.max(departures[i] ? 8 : 0, departures[i]/max*100) + "%"}} />
+        <span className="ef-chartBarSlot" title={name + " : " + arrivals[i] + " recrutement(s)"} style={{height:Math.max(arrivals[i] ? 8 : 0, arrivals[i]/max*100) + "%"}}>
+          {arrivals[i]>0&&<strong className="ef-chartValue arrivals">{arrivals[i]}</strong>}
+          <span className="ef-chartBar arrivals" />
+        </span>
+        <span className="ef-chartBarSlot" title={name + " : " + departures[i] + " départ(s)"} style={{height:Math.max(departures[i] ? 8 : 0, departures[i]/max*100) + "%"}}>
+          {departures[i]>0&&<strong className="ef-chartValue departures">{departures[i]}</strong>}
+          <span className="ef-chartBar departures" />
+        </span>
       </div>
       <small>{name}</small>
     </div>)}

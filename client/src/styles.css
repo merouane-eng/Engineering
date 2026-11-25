@@ -447,8 +447,12 @@ input:focus, select:focus { border-color:#57c7ff; box-shadow:0 0 0 3px rgba(87,1
 .ef-rh .ef-rhChartEmpty{padding:20px}
 .ef-rh .ef-chart{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:5px;height:190px;padding-top:8px;margin-top:8px;border-bottom:1px solid #294e64}
 .ef-rh .ef-chartCol{min-width:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:8px}
-.ef-rh .ef-chartBars{height:150px;width:100%;max-width:42px;display:flex;align-items:flex-end;justify-content:center;gap:3px}
-.ef-rh .ef-chartBar{display:block;flex:1;max-width:14px;min-height:0;border-radius:5px 5px 0 0;transition:height .2s}
+.ef-rh .ef-chartBars{height:150px;width:100%;max-width:42px;display:flex;align-items:flex-end;justify-content:center;gap:3px;padding-top:18px;box-sizing:border-box}
+.ef-rh .ef-chartBarSlot{position:relative;display:block;flex:1;max-width:14px;min-width:0;min-height:0;transition:height .2s}
+.ef-rh .ef-chartBar{display:block;width:100%;height:100%;border-radius:5px 5px 0 0}
+.ef-rh .ef-chartValue{position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);font-size:10px;line-height:1;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;text-shadow:0 1px 3px #071622}
+.ef-rh .ef-chartValue.arrivals{color:#81f5d0}
+.ef-rh .ef-chartValue.departures{color:#ffd1b9}
 .ef-rh .ef-chartBar.arrivals{background:linear-gradient(#6cf2c4,#1b937b)}
 .ef-rh .ef-chartBar.departures{background:linear-gradient(#ffc5ab,#de796c)}
 .ef-rh .ef-chartCol small{color:#8daac0;font-size:9px;white-space:nowrap;margin-bottom:-19px}
