@@ -411,6 +411,8 @@ function FailureEntry({ user }) {
       .then(setPieceContext).catch(() => setPieceContext({ catalog: [], machineParts: [], history: [] }));
   }, [draft.machine]);
   const machines = context.machines.filter(row => !draft.unite || row.unite === draft.unite);
+  const machinePieceIds = new Set(pieceContext.machineParts.map(part => String(part.id)));
+  const otherCatalogPieces = pieceContext.catalog.filter(part => !machinePieceIds.has(String(part.id)));
   const calculatedDowntime = () => {
     if (!draft.date_debut || !draft.date_fin) return "";
     const start = new Date(draft.date_debut);
@@ -420,7 +422,7 @@ function FailureEntry({ user }) {
   };
   const downtime = calculatedDowntime();
   const selectPiece = id => {
-    const selected = pieceContext.catalog.find(piece => String(piece.id) === String(id));
+    const selected = [...pieceContext.machineParts, ...pieceContext.catalog].find(piece => String(piece.id) === String(id));
     setPieceDraft({ ...pieceDraft, selected: id, nom_piece: selected?.nom || "", reference_piece: selected?.reference || "" });
   };
   const addPiece = () => {
@@ -515,7 +517,15 @@ function FailureEntry({ user }) {
       <section className="fm-card"><div className="fm-head"><span className="fm-icon"><Wrench/></span><div><h3>Pièces de rechange</h3><p>Sélectionnez les pièces consommées ou ajoutez une nouvelle référence.</p></div></div>
         <div className="failurePartsToolbar"><p>Les pièces utilisées sont conservées dans l’historique et ajoutées automatiquement au référentiel de la machine après l’enregistrement de la panne.</p>{permissionAllowed(user,"machines","edit")&&<button className="secondary" type="button" onClick={()=>setPieceFormOpen(true)}><Plus/> Nouvelle pièce au catalogue</button>}</div>
         <div className="piecePicker">
-          <label>Catalogue de pièces<select value={pieceDraft.selected} onChange={e=>selectPiece(e.target.value)}><option value="">Saisir ou choisir une pièce...</option>{pieceContext.catalog.map(piece=><option key={piece.id} value={piece.id}>{piece.reference?piece.reference+" — ":""}{piece.nom}</option>)}</select></label>
+          <label>Catalogue de pièces<select value={pieceDraft.selected} onChange={e=>selectPiece(e.target.value)}>
+            <option value="">Saisir ou choisir une pièce...</option>
+            {draft.machine&&pieceContext.machineParts.length>0&&<optgroup label={"Pièces déjà utilisées — "+draft.machine}>
+              {pieceContext.machineParts.map(piece=><option key={"machine-"+piece.id} value={String(piece.id)}>{piece.reference?piece.reference+" — ":""}{piece.nom}</option>)}
+            </optgroup>}
+            {otherCatalogPieces.length>0&&<optgroup label="Autres pièces du catalogue">
+              {otherCatalogPieces.map(piece=><option key={"catalog-"+piece.id} value={String(piece.id)}>{piece.reference?piece.reference+" — ":""}{piece.nom}</option>)}
+            </optgroup>}
+          </select></label>
           <label>Nom de la pièce<input value={pieceDraft.nom_piece} onChange={e=>setPieceDraft({...pieceDraft,nom_piece:e.target.value})} placeholder="Désignation"/></label>
           <label>Référence<input value={pieceDraft.reference_piece} onChange={e=>setPieceDraft({...pieceDraft,reference_piece:e.target.value})} placeholder="Référence"/></label>
           <label>Quantité<input type="number" min="1" value={pieceDraft.quantite} onChange={e=>setPieceDraft({...pieceDraft,quantite:e.target.value})}/></label>
